@@ -3,15 +3,15 @@ name: Docker
 on:
   push:
     branches:
-      - "main"
+      - "docker-release"
     tags:
       - "*"
 env:
   # Docker & Registries
   ARCHITECTURES: linux/amd64,linux/arm64
   IMAGE_NAME: silverbullet
-  NAMESPACE_GITHUB: silverbulletmd
-  NAMESPACE_DOCKER: zefhemel
+  NAMESPACE_GITHUB: wzaldivar
+  NAMESPACE_DOCKER: wzaldivar
 jobs:
   docker-main:
     runs-on: ubuntu-latest
