@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: ["docker-release"]
+    branches: [ "main" ]
   pull_request:
-    branches: ["docker-release"]
+    branches: [ "main" ]
 
 permissions:
   contents: read
