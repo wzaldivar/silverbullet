@@ -48,8 +48,7 @@ export class EventHook implements EventHookI {
     if (!this.system) {
       throw new Error("Event hook is not initialized");
     }
-    const responses: any[] = [];
-    const promises: Promise<void>[] = [];
+    const promises: Promise<any>[] = [];
     for (const plug of this.system.loadedPlugs.values()) {
       const manifest = plug.manifest;
       for (
@@ -67,10 +66,7 @@ export class EventHook implements EventHookI {
                 // Queue the promise
                 promises.push((async () => {
                   try {
-                    const result = await plug.invoke(name, args);
-                    if (result !== undefined) {
-                      responses.push(result);
-                    }
+                    return await plug.invoke(name, args);
                   } catch (e: any) {
                     console.error(
                       `Error dispatching event ${eventName} to ${plug.name}.${name}: ${e.message}`,
@@ -91,10 +87,7 @@ export class EventHook implements EventHookI {
       for (const localListener of localListeners) {
         // Queue the promise
         promises.push((async () => {
-          const result = await Promise.resolve(localListener(...args));
-          if (result) {
-            responses.push(result);
-          }
+          return await Promise.resolve(localListener(...args));
         })());
       }
     }
@@ -109,16 +102,13 @@ export class EventHook implements EventHookI {
         if (eventNameToRegex(name).test(eventName)) {
           for (const listener of listeners) {
             promises.push((async () => {
-              const result = await Promise.resolve(
+              return await Promise.resolve(
                 listener({
                   name: eventName,
                   // Most events have a single argument, so let's optimize for that, otherwise pass all arguments as an array
                   data: args.length === 1 ? args[0] : args,
                 }),
               );
-              if (result) {
-                responses.push(result);
-              }
             })());
           }
         }
@@ -126,9 +116,10 @@ export class EventHook implements EventHookI {
     }
 
     // Wait for all promises to resolve
-    await Promise.all(promises);
-
-    return responses;
+    return (await Promise.allSettled(promises))
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value)
+      .filter((result) => result == undefined); // Deliberate `==` to only filter null or undefined
   }
 
   apply(system: System<EventHookT>): void {
