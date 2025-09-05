@@ -34,7 +34,7 @@ import { clientCodeWidgetSyscalls } from "./syscalls/client_code_widget.ts";
 import { KVPrimitivesManifestCache } from "../lib/plugos/manifest_cache.ts";
 import { createKeyBindings } from "./editor_state.ts";
 import type { DataStoreMQ } from "../lib/data/mq.datastore.ts";
-import { plugPrefix } from "../lib/spaces/constants.ts";
+import { fsEndpoint, plugPrefix } from "../lib/spaces/constants.ts";
 import { jsonschemaSyscalls } from "./syscalls/jsonschema.ts";
 import { luaSyscalls } from "./syscalls/lua.ts";
 import { indexSyscalls } from "./syscalls/index.ts";
@@ -53,11 +53,12 @@ import {
   luaValueToJS,
 } from "../lib/space_lua/runtime.ts";
 import { buildThreadLocalEnv, handleLuaError } from "./space_lua_api.ts";
+import { builtinPlugNames } from "../plugs/builtin_plugs.ts";
 
 const plugNameExtractRegex = /\/(.+)\.plug\.js$/;
 const indexVersionKey = ["$indexVersion"];
 // Bump this one every time a full reindex is needed
-const desiredIndexVersion = 7;
+const desiredIndexVersion = 8;
 const mqTimeout = 10000; // 10s
 const mqTimeoutRetry = 3;
 
@@ -149,7 +150,12 @@ export class ClientSystem {
           this.system.unload(path);
           await this.system.load(
             plugName,
-            createSandbox(new URL(`${path}`, document.baseURI)),
+            createSandbox(
+              new URL(
+                `${path}`,
+                document.baseURI.slice(0, -1) + fsEndpoint + "/",
+              ),
+            ),
             newHash,
           );
         }
@@ -208,6 +214,10 @@ export class ClientSystem {
   }
 
   async loadScripts() {
+    if (this.client.clientConfig.disableSpaceLua) {
+      console.info("Space Lua scripts are disabled, skipping loading scripts");
+      return;
+    }
     if (!await this.hasFullIndexCompleted()) {
       console.info(
         "Not loading space scripts, since initial indexing has not completed yet",
@@ -245,12 +255,23 @@ export class ClientSystem {
     await Promise.all(allPlugs.map(async (plugMeta) => {
       try {
         const plugName = plugNameExtractRegex.exec(plugMeta.name)![1];
+        if (
+          this.client.clientConfig.disablePlugs &&
+          !builtinPlugNames.includes(plugName)
+        ) {
+          console.warn(
+            "Skipping loading of plug",
+            plugMeta.name,
+            "because client config disables plugs",
+          );
+          return;
+        }
         await this.system.load(
           plugName,
           createSandbox(
             new URL(
               plugMeta.name,
-              document.baseURI, // We're NOT striping trailing '/', this used to be `location.origin`
+              document.baseURI.slice(0, -1) + fsEndpoint + "/", // We're NOT striping trailing '/', this used to be `location.origin`
             ),
           ),
           plugMeta.lastModified,

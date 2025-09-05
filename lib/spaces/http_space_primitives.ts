@@ -1,5 +1,5 @@
 import type { SpacePrimitives } from "./space_primitives.ts";
-import { encodePageURI } from "@silverbulletmd/silverbullet/lib/page_ref";
+import { encodePageURI } from "@silverbulletmd/silverbullet/lib/ref";
 import {
   flushCachesAndUnregisterServiceWorker,
   unregisterServiceWorkers,
@@ -119,7 +119,7 @@ export class HttpSpacePrimitives implements SpacePrimitives {
   }
 
   async fetchFileList(): Promise<FileMeta[]> {
-    const resp = await this.authenticatedFetch(`${this.url}/index.json`, {
+    const resp = await this.authenticatedFetch(this.url, {
       method: "GET",
     });
 
@@ -222,7 +222,9 @@ export class HttpSpacePrimitives implements SpacePrimitives {
 
   // If not: throws an error or invokes a redirect
   async ping() {
-    const response = await this.authenticatedFetch(`${this.url}/.ping`, {
+    const parentEndpoint = this.url.split("/").slice(0, -1).join("/") +
+      "/.ping";
+    const response = await this.authenticatedFetch(parentEndpoint, {
       method: "GET",
       headers: {
         Accept: "application/json",

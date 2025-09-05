@@ -5,7 +5,7 @@ import type { AssetBundle } from "../lib/asset_bundle/bundle.ts";
 import { handleShellEndpoint } from "./shell_endpoint.ts";
 import type { KvPrimitives } from "../lib/data/kv_primitives.ts";
 import { compile as gitIgnoreCompiler } from "gitignore-parser";
-import { decodePageURI } from "@silverbulletmd/silverbullet/lib/page_ref";
+import { decodePageURI } from "@silverbulletmd/silverbullet/lib/ref";
 import { LockoutTimer } from "./lockout.ts";
 import type { AuthOptions } from "../cmd/server.ts";
 import type { ClientConfig } from "../web/client.ts";
@@ -25,6 +25,9 @@ import {
 } from "./shell_backend.ts";
 import { CONFIG_TEMPLATE, INDEX_TEMPLATE } from "../web/PAGE_TEMPLATES.ts";
 import type { FileMeta } from "../type/index.ts";
+import {
+  CheckPathSpacePrimitives,
+} from "../lib/spaces/checked_space_primitives.ts";
 
 const authenticationExpirySeconds = 60 * 60 * 24 * 7; // 1 week
 
@@ -36,14 +39,15 @@ export type ServerOptions = {
   spaceIgnore?: string;
   pagesPath: string;
   shellBackend: string;
+  shellCommandWhiteList?: string[];
   readOnly: boolean;
   indexPage: string;
 };
 
 export class HttpServer {
   private abortController?: AbortController;
-  private hostname: string;
-  private port: number;
+  private readonly hostname: string;
+  private readonly port: number;
   private app: Hono;
   private readonly spacePrimitives: SpacePrimitives;
   private jwtIssuer: JWTIssuer;
@@ -64,12 +68,14 @@ export class HttpServer {
       fileFilterFn = gitIgnoreCompiler(options.spaceIgnore).accepts;
     }
 
-    this.spacePrimitives = new FilteredSpacePrimitives(
-      new AssetBundlePlugSpacePrimitives(
-        determineStorageBackend(options.pagesPath),
-        this.plugAssetBundle,
+    this.spacePrimitives = new CheckPathSpacePrimitives(
+      new FilteredSpacePrimitives(
+        new AssetBundlePlugSpacePrimitives(
+          determineStorageBackend(options.pagesPath),
+          this.plugAssetBundle,
+        ),
+        (meta) => fileFilterFn(meta.name),
       ),
-      (meta) => fileFilterFn(meta.name),
     );
 
     if (options.readOnly) {
@@ -92,7 +98,7 @@ export class HttpServer {
     // Serve static files (javascript, css, html)
     this.serveStatic();
     this.addAuth();
-    this.addFsRoutes();
+    this.app.route("/.fs", this.buildFsRoutes());
 
     // Fallback, serve the UI index.html
     this.app.use("*", (c) => {
@@ -285,6 +291,13 @@ export class HttpServer {
       return c.redirect(this.prefixedUrl("/.auth"));
     });
 
+    // Simple ping health endpoint
+    this.app.get("/.ping", (c) => {
+      return c.text("OK", 200, {
+        "Cache-Control": "no-cache",
+      });
+    });
+
     // Check auth on every other request
     this.app.use("*", async (c, next) => {
       if (!this.options.auth) {
@@ -360,13 +373,6 @@ export class HttpServer {
         indexPage: this.options.indexPage,
       };
       return c.json(clientConfig, 200, {
-        "Cache-Control": "no-cache",
-      });
-    });
-
-    // Simple ping health endpoint
-    this.app.get("/.ping", (c) => {
-      return c.text("OK", 200, {
         "Cache-Control": "no-cache",
       });
     });
@@ -460,9 +466,10 @@ export class HttpServer {
     }
   }
 
-  private addFsRoutes() {
+  private buildFsRoutes(): Hono {
+    const fsRoutes = new Hono();
     // File list
-    this.app.get("/index.json", async (c) => {
+    fsRoutes.get("/", async (c) => {
       const req = c.req;
       if (req.header("X-Sync-Mode")) {
         // Only handle direct requests for a JSON representation of the file list
@@ -477,108 +484,79 @@ export class HttpServer {
       }
     });
 
-    const filePathRegex = "/:path{[^!].*\\.[a-zA-Z0-9]+}";
-    const mdExt = ".md";
+    fsRoutes.get("/:path{.*}", this.handleGet.bind(this)).put(
+      this.handlePut.bind(this),
+    ).delete(this.handleDelete.bind(this)).options();
 
-    this.app.get(filePathRegex, async (c, next) => {
-      const req = c.req;
-      const name = req.param("path")!;
-      console.log("Requested file", name);
+    return fsRoutes;
+  }
 
-      if (
-        name.endsWith(mdExt) &&
-        // This header signififies the requests comes directly from the http_space_primitives client (not the browser)
-        !req.header("X-Sync-Mode") &&
-        req.header("sec-fetch-mode") !== "cors"
-      ) {
-        // It can happen that during a sync, authentication expires, this may result in a redirect to the login page and then back to this particular file. This particular file may be an .md file, which isn't great to show so we're redirecting to the associated SB UI page.
-        console.warn(
-          "Request was without X-Sync-Mode nor a CORS request, redirecting to page",
+  private async handleDelete(c: Context<any>) {
+    const req = c.req;
+    const name = req.param("path")!;
+    if (this.options.readOnly) {
+      return c.text("Read only mode, no writes allowed", 405);
+    }
+    console.log("Deleting file", name);
+    try {
+      await this.spacePrimitives.deleteFile(name);
+      return c.text("OK");
+    } catch (e: any) {
+      console.error("Error deleting document", e);
+      return c.text(e.message, 500);
+    }
+  }
+
+  private async handlePut(c: Context<any>) {
+    const req = c.req;
+    const path = req.param("path")!;
+    if (this.options.readOnly) {
+      return c.text("Read only mode, no writes allowed", 405);
+    }
+    console.log("Writing file", path);
+
+    const body = await req.arrayBuffer();
+
+    try {
+      const meta = await this.spacePrimitives.writeFile(
+        path,
+        new Uint8Array(body),
+      );
+      return c.text("OK", 200, this.fileMetaToHeaders(meta));
+    } catch (err) {
+      console.error("Write failed", err);
+      return c.text("Write failed", 500);
+    }
+  }
+
+  async handleGet(c: Context<any>) {
+    const req = c.req;
+    const name = req.param("path")!;
+
+    try {
+      if (req.header("X-Get-Meta")) {
+        // Getting meta via GET request
+        const fileData = await this.spacePrimitives.getFileMeta(
+          name,
         );
-        return c.redirect(this.prefixedUrl(`/${name.slice(0, -mdExt.length)}`));
+        return c.text("", 200, this.fileMetaToHeaders(fileData));
       }
-      // This is a good guess that the request comes directly from a user
+      const fileData = await this.spacePrimitives.readFile(name);
+      const lastModifiedHeader = new Date(fileData.meta.lastModified)
+        .toUTCString();
       if (
-        req.header("Accept")?.includes("text/html") &&
-        req.query("raw") !== "true"
+        req.header("If-Modified-Since") === lastModifiedHeader
       ) {
-        return next();
+        return c.body(null, 304);
       }
-
-      if (name.startsWith(".")) {
-        // Don't expose hidden files
-        return c.notFound();
-      }
-
-      try {
-        if (req.header("X-Get-Meta")) {
-          // Getting meta via GET request
-          const fileData = await this.spacePrimitives.getFileMeta(
-            name,
-          );
-          return c.text("", 200, this.fileMetaToHeaders(fileData));
-        }
-        const fileData = await this.spacePrimitives.readFile(name);
-        const lastModifiedHeader = new Date(fileData.meta.lastModified)
-          .toUTCString();
-        if (
-          req.header("If-Modified-Since") === lastModifiedHeader
-        ) {
-          return c.body(null, 304);
-        }
-        return c.body(new Uint8Array(fileData.data).buffer, 200, {
-          ...this.fileMetaToHeaders(fileData.meta),
-          "Last-Modified": lastModifiedHeader,
-        });
-      } catch (e: any) {
-        console.error("Error GETting file", name, e.message);
-        return c.notFound();
-      }
-    }).put(
-      async (c) => {
-        const req = c.req;
-        const name = req.param("path")!;
-        if (this.options.readOnly) {
-          return c.text("Read only mode, no writes allowed", 405);
-        }
-        console.log("Writing file", name);
-        if (name.startsWith(".")) {
-          // Don't expose hidden files
-          return c.text("Forbidden", 403);
-        }
-
-        const body = await req.arrayBuffer();
-
-        try {
-          const meta = await this.spacePrimitives.writeFile(
-            name,
-            new Uint8Array(body),
-          );
-          return c.text("OK", 200, this.fileMetaToHeaders(meta));
-        } catch (err) {
-          console.error("Write failed", err);
-          return c.text("Write failed", 500);
-        }
-      },
-    ).delete(async (c) => {
-      const req = c.req;
-      const name = req.param("path")!;
-      if (this.options.readOnly) {
-        return c.text("Read only mode, no writes allowed", 405);
-      }
-      console.log("Deleting file", name);
-      if (name.startsWith(".")) {
-        // Don't expose hidden files
-        return c.text("Forbidden", 403);
-      }
-      try {
-        await this.spacePrimitives.deleteFile(name);
-        return c.text("OK");
-      } catch (e: any) {
-        console.error("Error deleting document", e);
-        return c.text(e.message, 500);
-      }
-    }).options();
+      return c.body(new Uint8Array(fileData.data).buffer, 200, {
+        ...this.fileMetaToHeaders(fileData.meta),
+        "Last-Modified": lastModifiedHeader,
+      });
+    } catch (e: any) {
+      console.error("Error GETting file", name, e.message);
+      return c.notFound();
+    }
   }
 
   private fileMetaToHeaders(fileMeta: FileMeta) {

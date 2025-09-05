@@ -13,6 +13,7 @@ import { AssetBundle, type AssetJson } from "../lib/asset_bundle/bundle.ts";
 import { resolve } from "@std/path";
 import { sleep } from "../lib/async.ts";
 import { MemoryKvPrimitives } from "../lib/data/memory_kv_primitives.ts";
+import { isValidName } from "@silverbulletmd/silverbullet/lib/ref";
 
 export type AuthOptions = {
   authToken?: string;
@@ -38,7 +39,17 @@ export async function serveCommand(
 
   const readOnly = !!Deno.env.get("SB_READ_ONLY");
 
+  if (readOnly) {
+    console.info("Starting in read-only mode.");
+  }
+
   const indexPage = Deno.env.get("SB_INDEX_PAGE") || "index";
+  if (!isValidName(indexPage)) {
+    console.error(
+      "SB_INDEX_PAGE has to be a valid page name.",
+    );
+    Deno.exit(1);
+  }
 
   folder = folder || Deno.env.get("SB_FOLDER");
   if (!folder) {
@@ -55,7 +66,11 @@ export async function serveCommand(
   console.info(
     `Storing database in ${dbFile}.`,
   );
-  const baseKvPrimitives = new MemoryKvPrimitives(dbFile);
+
+  // The only use case of this KV is to store auth-related stuff (keys, hashes)
+  const baseKvPrimitives = new MemoryKvPrimitives(dbFile, {
+    throttleMs: 100,
+  });
   await baseKvPrimitives.init();
 
   console.info("Starting SilverBullet binding to", `${hostname}:${port}`);
@@ -105,6 +120,8 @@ export async function serveCommand(
   }
 
   const shellBackend = Deno.env.get("SB_SHELL_BACKEND") || "local";
+  const shellCommandWhiteList = Deno.env.get("SB_SHELL_WHITELIST")?.split(" ");
+
   const spaceIgnore = Deno.env.get("SB_SPACE_IGNORE");
 
   // All plug code bundled into a JSON blob
@@ -127,6 +144,7 @@ export async function serveCommand(
       readOnly,
       shellBackend,
       pagesPath: folder,
+      shellCommandWhiteList,
     },
     clientAssets,
     plugAssets,

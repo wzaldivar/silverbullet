@@ -1,12 +1,15 @@
 import {
   encodePageURI,
-  parseRef,
+  getNameFromPath,
+  isMarkdownPath,
+  parseToRef,
+  type Path,
   type Ref,
-} from "@silverbulletmd/silverbullet/lib/page_ref";
+} from "@silverbulletmd/silverbullet/lib/ref";
 import type { Client } from "./client.ts";
-import { cleanPageRef } from "@silverbulletmd/silverbullet/lib/resolve";
-import { safeRun } from "../lib/async.ts";
 
+// The path of a location state should not be empty, rather it should be
+// normalized to the indexpage beforhand
 export type LocationState = Ref & {
   scrollTop?: number;
   selection?: {
@@ -16,61 +19,62 @@ export type LocationState = Ref & {
 };
 
 export class PathPageNavigator {
-  navigationResolve?: () => void;
-  indexPage!: string;
+  navigationPromise: PromiseWithResolvers<string | null> | null = null;
+  indexRef!: Ref;
 
   openLocations = new Map<string, LocationState>();
 
   constructor(
     private client: Client,
   ) {
-    this.indexPage = cleanPageRef(this.client.clientConfig.indexPage);
+    this.indexRef = this.client.getIndexRef();
   }
 
   /**
-   * Navigates the client to the given page, this involves:
-   * - Patching the current popstate with current state
-   * - Pushing the new state
-   * - Dispatching a popstate event
-   * @param pageRef to navigate to
-   * @param replaceState whether to update the state in place (rather than to push a new state)
+   * Navigates the client to the given page. An empty string path is navigated
+   * to the index page. This function also updates the browser history
+   * @param replaceState whether to update the state in place (rather than to
+   * push a new state)
    */
   async navigate(
     ref: Ref,
     replaceState = false,
   ) {
-    if (ref.kind === "page" && ref.page === this.indexPage) {
-      ref.page = "";
+    // We are already navigating, let's wait
+    if (this.navigationPromise) {
+      await this.navigationPromise.promise;
     }
-    const currentState = this.buildCurrentLocationState();
-    // No need to keep pos and anchor if we already have scrollTop and selection
-    const cleanState: LocationState = currentState.kind === "page"
-      ? {
-        ...currentState,
-        pos: undefined,
-      }
-      : currentState;
 
-    this.openLocations.set(currentState.page || this.indexPage, cleanState);
+    const currentState = this.buildCurrentLocationState();
+    // Remove details as we prefer to actually keep the scrollTop
+    currentState.details = undefined;
+
+    if (ref.path === "") {
+      ref.path = this.indexRef.path;
+    }
+
+    this.openLocations.set(currentState.path, currentState);
 
     if (!replaceState) {
       globalThis.history.replaceState(
-        cleanState,
+        currentState,
         "",
-        `${document.baseURI}${encodePageURI(currentState.page)}`,
+        `${document.baseURI}${this.pathToURI(currentState.path)}`,
       );
       globalThis.history.pushState(
         ref,
         "",
-        `${document.baseURI}${encodePageURI(ref.page)}`,
+        `${document.baseURI}${this.pathToURI(ref.path)}`,
       );
     } else {
       globalThis.history.replaceState(
         ref,
         "",
-        `${document.baseURI}${encodePageURI(ref.page)}`,
+        `${document.baseURI}${this.pathToURI(ref.path)}`,
       );
     }
+
+    this.navigationPromise = Promise.withResolvers();
 
     globalThis.dispatchEvent(
       new PopStateEvent("popstate", {
@@ -78,18 +82,55 @@ export class PathPageNavigator {
       }),
     );
 
-    await new Promise<void>((resolve) => {
-      this.navigationResolve = resolve;
-    });
-    this.navigationResolve = undefined;
+    const error = await this.navigationPromise.promise;
+
+    if (error !== null) {
+      // The navigation failed, let's revert everything we've done (This could
+      // e.g. be a document editor which doesn't exist)
+      this.client.flashNotification(`Failed to navigate: ${error}`, "error");
+
+      if (!replaceState) {
+        history.go(-1);
+      } else {
+        // This can e.g. happen on the first navigate. We obviously can't fall back to the same path, so fallback to the indexpage
+
+        const newState: LocationState = currentState.path === ref.path
+          ? this.indexRef
+          : currentState;
+
+        globalThis.history.replaceState(
+          newState,
+          "",
+          `${document.baseURI}${this.pathToURI(newState.path)}`,
+        );
+
+        globalThis.dispatchEvent(
+          new PopStateEvent("popstate", {
+            state: newState,
+          }),
+        );
+
+        // This is should never fail, because we already navigated here before.
+        await this.navigationPromise.promise;
+      }
+    }
+
+    this.navigationPromise = null;
   }
 
-  buildCurrentLocationState(): LocationState {
-    const locationState: LocationState = parseRefFromURI();
+  private pathToURI(path: Path): string {
+    return path !== this.indexRef.path
+      ? encodePageURI(getNameFromPath(path))
+      : "";
+  }
 
-    if (
-      locationState.kind === "page"
-    ) {
+  private buildCurrentLocationState(): LocationState {
+    const locationState: LocationState = parseRefFromURI() || this.indexRef;
+    if (locationState.path === "") {
+      locationState.path = this.indexRef.path;
+    }
+
+    if (isMarkdownPath(locationState.path)) {
       const editorView = this.client.editorView;
 
       const mainSelection = editorView.state.selection.main;
@@ -107,61 +148,47 @@ export class PathPageNavigator {
     pageLoadCallback: (
       locationState: LocationState,
     ) => Promise<void>,
-  ): void {
-    const cb = (event: PopStateEvent) => {
-      safeRun(async () => {
-        const popState = event.state as LocationState;
-        if (popState) {
-          // This is the usual case
-          if (!popState.page) {
-            popState.kind = "page";
-            popState.page = this.indexPage;
-          }
-          if (
-            popState.kind === "page" &&
-            popState.pos === undefined &&
-            popState.selection === undefined &&
-            popState.scrollTop === undefined
-          ) {
-            // Pretty low-context popstate, so let's leverage openPages
-            const openPage = this.openLocations.get(popState.page);
-            if (openPage && openPage.kind === "page") {
-              popState.selection = openPage.selection;
-              popState.scrollTop = openPage.scrollTop;
-            }
-          }
-          await pageLoadCallback(popState);
-        } else {
-          // This occurs when the page is loaded completely fresh with no browser history around it
-          const pageRef = parseRefFromURI();
-          if (!pageRef.page) {
-            pageRef.kind = "page";
-            pageRef.page = this.indexPage;
-          }
-          await pageLoadCallback(pageRef);
-        }
-        if (this.navigationResolve) {
-          this.navigationResolve();
-        }
-      });
-    };
-    globalThis.addEventListener("popstate", cb);
+  ) {
+    globalThis.addEventListener("popstate", async (event: PopStateEvent) => {
+      const state: LocationState = event.state
+        ? event.state
+        // The popstate event can be fired in a whole list of weird situations
+        // (see MDN). Try to do our best if it's fired without the state
+        : parseRefFromURI() || this.indexRef;
 
-    cb(
-      new PopStateEvent("popstate", {
-        state: this.buildCurrentLocationState(),
-      }),
-    );
+      // Try filling in the ref using the openLocation cache
+      if (
+        !state.details && !state.selection && !state.scrollTop
+      ) {
+        const openLocation = this.openLocations.get(state.path);
+        if (openLocation) {
+          state.selection = openLocation.selection;
+          state.scrollTop = openLocation.scrollTop;
+        }
+      }
+
+      // For some (propably smart) reason the reject() function on a
+      // Promise.withResolvers, also throws. This is hugely annoying here, so
+      // let's resolve for both cases
+      await pageLoadCallback(state)
+        .then(
+          () => this.navigationPromise?.resolve(null),
+          (e) => this.navigationPromise?.resolve(e.message),
+        );
+    });
   }
 }
 
-export function parseRefFromURI(): Ref {
-  const locationRef = parseRef(decodeURIComponent(
+export function parseRefFromURI(): Ref | null {
+  const locationRef = parseToRef(decodeURIComponent(
     location.href.substring(document.baseURI.length), //this essentially returns location with prefix and leading slash removed (equivalent to location.pathname.substring(prefix.length).substring(1)),
   ));
 
-  if (location.hash && locationRef.kind === "page") {
-    locationRef.header = decodeURIComponent(location.hash.substring(1));
+  if (locationRef && location.hash) {
+    locationRef.details = {
+      type: "header",
+      header: decodeURIComponent(location.hash.substring(1)),
+    };
   }
 
   return locationRef;

@@ -2,11 +2,11 @@ The task notation syntax is a [[Markdown]] extension to write down tasks.
 
 Its most basic form is:
 
-    * [ ] My task name
+    * [ ] This is my first task
 
 which renders as follows:
 
-* [ ] My task name
+* [ ] This is my first task
 
 # Custom states
 Tasks support the default `x` and ` ` states (done and not done), but custom states as well. Custom states used across your space are kept in [[Objects#taskstate]].
@@ -14,7 +14,12 @@ Tasks support the default `x` and ` ` states (done and not done), but custom sta
 Example:
 
 * [NOT STARTED] Task 1
+  Fix having global variables work in markdown.expandMarkdown
 * [IN PROGRESS] Task 2
+
+Restrictions:
+
+* Task states cannot contain `:` to avoid ambiguity with [[Attributes]] syntax.
 
 # Querying
 SilverBullet allows you to simply toggle the complete state of a task by clicking the checkbox. It also allows for querying tasks as [[Objects#task]]. For instance:

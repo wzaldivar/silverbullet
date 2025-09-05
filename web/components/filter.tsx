@@ -211,6 +211,7 @@ export function FilterList({
 
             return true;
           }}
+          editable={true}
         />
       </div>
       <div
@@ -277,7 +278,7 @@ export function FilterList({
                             item.option.category.length + 2,
                           );
                         }
-                        return displayName;
+                        return (item.option.prefix ?? "") + displayName;
                       })()}
                     </span>
                     {item.option.hint && (
