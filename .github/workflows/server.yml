@@ -4,35 +4,26 @@ on:
   push:
     tags:
       - "*"
-
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
-
     steps:
       - name: Setup repo
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.4.5
-
-      - name: Build bundles
+          deno-version: v2.6.8
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25.1"
+      - name: Compile client and plug-compile with Deno
         run: |
-          deno task build
-
-      - name: Compile for all platforms
-        run: |
-          deno task server:zip:linux-x86_64
-          deno task server:zip:linux-aarch64
-          deno task server:zip:darwin-x86_64
-          deno task server:zip:darwin-aarch64
-          deno task server:zip:windows-x86_64
-
+          deno task build-production
+          deno task build-plug-compile
+      - name: Build Go binaries for multiple platforms
+        run: make build-server-releases
       - name: Release
         uses: softprops/action-gh-release@v1
         env:
@@ -40,4 +31,5 @@ jobs:
         with:
           draft: true
           files: |
+            dist/plug-compile.js
             silverbullet-*.zip

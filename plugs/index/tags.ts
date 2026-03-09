@@ -1,14 +1,19 @@
-import type { IndexTreeEvent } from "../../type/event.ts";
-import { extractFrontMatter } from "@silverbulletmd/silverbullet/lib/frontmatter";
-import { indexObjects, queryLuaObjects } from "./api.ts";
+import type { FrontMatter } from "./frontmatter.ts";
 import {
-  addParentPointers,
   collectNodesOfType,
   findParentMatching,
+  type ParseTree,
+  replaceNodesMatching,
+  traverseTree,
 } from "@silverbulletmd/silverbullet/lib/tree";
-import { extractHashtag, renderHashtag } from "../../plug-api/lib/tags.ts";
-import type { ObjectValue } from "../../type/index.ts";
+import type {
+  ObjectValue,
+  PageMeta,
+} from "@silverbulletmd/silverbullet/type/index";
 import type { CompleteEvent } from "@silverbulletmd/silverbullet/type/client";
+import { tagRegex } from "../../client/markdown_parser/constants.ts";
+import { extractHashtag } from "@silverbulletmd/silverbullet/lib/tags";
+import { index } from "@silverbulletmd/silverbullet/syscalls";
 
 export type TagObject = ObjectValue<{
   name: string;
@@ -16,10 +21,16 @@ export type TagObject = ObjectValue<{
   parent: string;
 }>;
 
-export async function indexTags({ name, tree }: IndexTreeEvent) {
+/**
+ * Handles indexing of page, item and task level tags, data tags are handled in data.ts
+ */
+export function indexTags(
+  pageMeta: PageMeta,
+  frontmatter: FrontMatter,
+  tree: ParseTree,
+) {
   const tags = new Set<string>(); // name:parent
-  addParentPointers(tree);
-  const pageTags: string[] = (await extractFrontMatter(tree)).tags || [];
+  const pageTags: string[] = frontmatter.tags || [];
   for (const pageTag of pageTags) {
     tags.add(`${pageTag}:page`);
   }
@@ -36,20 +47,16 @@ export async function indexTags({ name, tree }: IndexTreeEvent) {
       tags.add(`${tagName}:page`);
     }
   });
-  // console.log("Indexing these tags", tags);
-  await indexObjects<TagObject>(
-    name,
-    [...tags].map((tag) => {
-      const [tagName, parent] = tag.split(":");
-      return {
-        ref: tag,
-        tag: "tag",
-        name: tagName,
-        page: name,
-        parent,
-      };
-    }),
-  );
+  return Promise.resolve([...tags].map((tag) => {
+    const [tagName, parent] = tag.split(":");
+    return {
+      ref: tag,
+      tag: "tag",
+      name: tagName,
+      page: pageMeta.name,
+      parent,
+    };
+  }));
 }
 
 export async function tagComplete(completeEvent: CompleteEvent) {
@@ -66,20 +73,73 @@ export async function tagComplete(completeEvent: CompleteEvent) {
   }
 
   // Query all tags with a matching parent
-  const allTags: TagObject[] = await queryLuaObjects<TagObject>(
+  const allTags: string[] = await index.queryLuaObjects<string>(
     "tag",
     {
       distinct: true,
+      select: { type: "Variable", name: "name", ctx: {} as any },
     },
-    {},
-    5,
   );
 
   return {
     from: completeEvent.pos - match[0].length,
     options: allTags.map((tag) => ({
-      label: renderHashtag(tag.name),
+      label: renderHashtag(tag),
       type: "tag",
     })),
   };
+}
+
+export function updateITags<T>(obj: ObjectValue<T>, frontmatter: FrontMatter) {
+  const itags = new Set<string>([obj.tag, ...frontmatter.tags || []]);
+  for (const tag of obj.tags || []) {
+    itags.add(tag);
+  }
+  for (const tag of obj.itags || []) {
+    itags.add(tag);
+  }
+  obj.itags = [...itags];
+}
+
+/** Get markup for a hashtag name with # prefix and angle brackets if necessary */
+export function renderHashtag(name: string): string {
+  // detect with the same regex as the parser
+  const simple: string = "#" + name;
+  const match = simple.match(tagRegex);
+  if (!match || match[0].length !== simple.length) {
+    return `#<${name}>`;
+  } else return simple;
+}
+
+/**
+ * Cleans hashtags from a tree as a side effect
+ * @param n
+ * @return found hashtags
+ */
+export function collectTags(n: ParseTree): string[] {
+  const tags = new Set<string>();
+  traverseTree(n, (n) => {
+    if (n.type === "Hashtag") {
+      tags.add(extractHashtag(n.children![0].text!));
+      return true;
+    } else if (n.type === "OrderedList" || n.type === "BulletList") {
+      // Don't traverse into sub-lists
+      return true;
+    }
+    return false;
+  });
+  return [...tags];
+}
+
+/**
+ * Cleans hashtags from a tree as a side effect
+ * @param n
+ */
+export function cleanTags(n: ParseTree) {
+  return replaceNodesMatching(n, (n) => {
+    if (n.type === "Hashtag") {
+      return null;
+    }
+    return;
+  });
 }

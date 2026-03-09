@@ -1,64 +1,42 @@
 name: index
 functions:
   # Public API
-  batchSet:
-    path: api.ts:batchSet
-    env: server
-  indexObjects:
-    path: api.ts:indexObjects
-    syscall: index.indexObjects
-    env: server
-  query:
-    path: api.ts:query
-    syscall: index.query
-  queryLuaObjects:
-    path: api.ts:queryLuaObjects
-    syscall: index.queryLuaObjects
-  getObjectByRef:
-    path: api.ts:getObjectByRef
-    syscall: index.getObjectByRef
-    env: server
-
   extractFrontmatter:
     path: api.ts:extractFrontmatter
     syscall: index.extractFrontmatter
-
   patchFrontmatter:
     path: api.ts:patchFrontmatter
     syscall: index.patchFrontmatter
+  text:
+    path: indexer.ts:indexMarkdown
+    syscall: index.markdown
+  queryLuaObjects:
+    # DEPRECATED: use index.queryLuaObjects syscall instead
+    path: api.ts:queryLuaObjects
+  getObjectByRef:
+    # DEPRECATED: use index.getObjectByRef syscall instead
+    path: api.ts:getObjectByRef
 
-  # Event handlers
-  clearIndex:
-    path: api.ts:clearIndex
-    env: server
+  # YAML syscalls
+  yamlParse:
+    path: yaml.ts:parse
+    syscall: yaml.parse
 
-  clearDSIndex:
-    path: api.ts:clearFileIndex
-    env: server
-    events:
-      - file:deleted
-
-  parseIndexTextRepublish:
-    path: "./command.ts:parseIndexTextRepublish"
-    env: server
-    events:
-      - page:index_text
+  yamlStringify:
+    path: yaml.ts:stringify
+    syscall: yaml.stringify
 
   reindexSpaceCommand:
     path: "./command.ts:reindexCommand"
     command:
       name: "Space: Reindex"
-      requireMode: rw
 
   processIndexQueue:
-    path: ./command.ts:processIndexQueue
+    path: ./queue.ts:processIndexQueue
     mqSubscriptions:
       - queue: indexQueue
         batchSize: 3
         autoAck: true
-  reindexSpace:
-    path: "./command.ts:reindexSpace"
-    env: server
 
   indexDocument:
     path: "./document.ts:indexDocument"
@@ -66,72 +44,24 @@ functions:
       - document:index
 
   indexPage:
-    path: page.ts:indexPage
-    events:
-      - page:index
-
-  indexParagraphs:
-    path: "./paragraph.ts:indexParagraphs"
-    events:
-      - page:index
-
-  # Backlinks
-  indexLinks:
-    path: "./page_links.ts:indexLinks"
-    events:
-      - page:index
-
-  # Item indexing
-  indexItem:
-    path: "./item.ts:indexItems"
-    events:
-      - page:index
-
-  # Tables
-  indexTables:
-    path: "table.ts:indexTables"
+    path: indexer.ts:indexPage
     events:
       - page:index
 
   # Headers
-  indexHeaders:
-    path: header.ts:indexHeaders
-    events:
-      - page:index
   headerComplete:
     path: header.ts:headerComplete
     events:
       - editor:complete
 
-  # Data
-  indexData:
-    path: data.ts:indexData
-    events:
-      - page:index
-
-  # Script
-  indexSpaceScript:
-    path: script.ts:indexSpaceScript
-    events:
-      - page:index
-  indexSpaceLua:
-    path: script.ts:indexSpaceLua
-    events:
-      - page:index
-
-  # Style
-  indexSpaceStyle:
-    path: style.ts:indexSpaceStyle
-    events:
-      - page:index
-
   # Hashtags
-  indexTags:
-    path: tags.ts:indexTags
-    events:
-      - page:index
   tagComplete:
     path: tags.ts:tagComplete
+    events:
+      - editor:complete
+
+  frontmatterComplete:
+    path: frontmatter.ts:frontmatterComplete
     events:
       - editor:complete
 
@@ -139,7 +69,6 @@ functions:
     path: "./refactor.ts:renamePageCommand"
     command:
       name: "Page: Rename"
-      mac: Cmd-Alt-r
       page: ""
       requireMode: rw
       requireEditor: page
@@ -153,10 +82,10 @@ functions:
     path: "./refactor.ts:renamePageLinkCommand"
     command:
       name: "Page: Rename Linked Page"
-      mac: Cmd-Ctrl-Alt-r
-      key: Ctrl-Shift-Alt-r
       requireMode: rw
       requireEditor: page
+
+  # Refactoring Commands
 
   renameDocumentCommand:
     path: "./refactor.ts:renameDocumentCommand"
@@ -165,7 +94,6 @@ functions:
       requireMode: rw
       requireEditor: notpage
 
-  # Refactoring Commands
   extractToPageCommand:
     path: ./refactor.ts:extractToPageCommand
     command:
@@ -186,355 +114,35 @@ functions:
     events:
       - editor:lint
 
-config:
-  # Schema for the built-in tags indexed by this plug
-  schema.tag:
-    page:
-      type: object
-      additionalProperties: true
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-          readOnly: true
-        tags:
-          anyOf:
-            - type: array
-              items:
-                type: string
-            - type: string
-        itags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-          readOnly: true
-        pageDecoration:
-          type: object
-          properties:
-            prefix:
-              type: string
-              nullable: true
-            cssClasses:
-              type: array
-              items:
-                type: string
-              nullable: true
-            hide:
-              type: boolean
-              nullable: true
-            renderWidgets:
-              type: boolean
-              nullable: true
-          nullable: true
-        displayName:
-          type: string
-          nullable: true
-        aliases:
-          type: array
-          items:
-            type: string
-          nullable: true
-        created:
-          type: string
-          readOnly: true
-        contentType:
-          type: string
-          readOnly: true
-        size:
-          type: number
-          readOnly: true
-        lastModified:
-          type: string
-          readOnly: true
-        perm:
-          type: string
-          readOnly: true
-          enum:
-            - ro
-            - rw
-        lastOpened:
-          type: number
-          readOnly: true
-          nullable: true
-    aspiring-page:
-      type: object
-      additionalProperties: true
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-          readOnly: true
-        name:
-          type: string
-          readOnly: true
-        page:
-          type: string
-          readOnly: true
-        pos:
-          type: number
-          readOnly: true
-    document:
-      type: object
-      additionalProperties: true
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-          readOnly: true
-        tags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-          readOnly: true
-        created:
-          readOnly: true
-          type: string
-        contentType:
-          type: string
-          readOnly: true
-        size:
-          type: number
-          readOnly: true
-        lastModified:
-          type: string
-          readOnly: true
-        perm:
-          type: string
-          readOnly: true
-          enum:
-            - ro
-            - rw
-        extension:
-          readOnly: true
-          type: string
-    item:
-      type: object
-      additionalProperties: true
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-          readOnly: true
-        tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-          readOnly: true
-        page:
-          type: string
-          readOnly: true
-        parent:
-          type: string
-          readOnly: true
-        pos:
-          type: number
-          readOnly: true
-        text:
-          type: string
-          readOnly: true
-    tag:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-          readOnly: true
-        tags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          readOnly: true
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-          readOnly: true
-        page:
-          type: string
-          readOnly: true
-        parent:
-          type: string
-          readOnly: true
-        context:
-          type: string
-          readOnly: true
+  lintObjects:
+    path: lint.ts:lintObjects
+    events:
+      - editor:lint
 
-    link:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-        page:
-          type: string
-        toFile:
-          type: string
-          nullable: true
-        toPage:
-          type: string
-          nullable: true
-        snippet:
-          type: string
-        pos:
-          type: number
-        alias:
-          type: string
-        asTemplate:
-          type: boolean
-    header:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        name:
-          type: string
-        page:
-          type: string
-        pos:
-          type: number
-        level:
-          type: string
-    paragraph:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        text:
-          type: string
-        page:
-          type: string
-        pos:
-          type: number
-    template:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-        tags:
-          anyOf:
-            - type: array
-              items:
-                type: string
-            - type: string
-        itags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        page:
-          type: string
-        pageName:
-          type: string
-        description:
-          type: string
-        pos:
-          type: number
-        hooks:
-          type: object
-        frontmatter:
-          anyOf:
-            - type: object
-            - type: string
-    table:
-      type: object
-      properties:
-        ref:
-          type: string
-          readOnly: true
-        tag:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        itags:
-          type: array
-          items:
-            type: string
-          nullable: true
-        page:
-          type: string
-        pos:
-          type: number
+  # Tasks
+  updateTaskState:
+    path: task.ts:updateTaskState
+
+  taskToggle:
+    path: "./task.ts:taskToggle"
+    events:
+      - page:click
+  taskToggleCommand:
+    path: ./task.ts:taskCycleCommand
+    command:
+      name: "Task: Cycle State"
+      key: Mod-. t
+      requireMode: rw
+      requireEditor: page
+
+  taskComplete:
+    path: ./complete.ts:completeTaskState
+    events:
+      - editor:complete
+
+  removeCompletedTasksCommand:
+    path: task.ts:removeCompletedTasksCommand
+    command:
+      name: "Task: Remove Completed"
+      requireMode: rw
+      requireEditor: page

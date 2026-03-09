@@ -2,12 +2,14 @@ name: plug-manager
 requiredPermissions:
   - fetch
 functions:
+  reloadPlugsCommand:
+    path: ./plugmanager.ts:reloadPlugsCommand
+    command:
+      name: "Plugs: Reload"
   updatePlugsCommand:
     path: ./plugmanager.ts:updatePlugsCommand
     command:
       name: "Plugs: Update"
-      key: "Ctrl-Shift-p"
-      mac: "Cmd-Shift-p"
       requireMode: rw
   getPlugHTTPS:
     path: "./plugmanager.ts:getPlugHTTPS"

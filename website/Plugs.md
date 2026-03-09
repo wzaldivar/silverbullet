@@ -10,7 +10,7 @@ Plugs can hook into SB in various ways:
 
 Each plug runs in its own _sandboxed environment_ and communicates with SB via _syscalls_ that expose a vast range of functionality. Plugs can be loaded, unloaded, and updated without having to restart SilverBullet itself.
 
-Plugs are distributed as self-contained JavaScript bundles (ending with `.plug.js`). SilverBullet will load all core plugs bundled with SB itself (listed below), as well as any additional plugs stored in the `_plug` folder in your [[Spaces|space]].
+Plugs are distributed as self-contained JavaScript bundles (ending with `.plug.js`). SilverBullet will load all core plugs bundled with SB itself (listed below), as well as any additional plugs stored in the `_plug` folder in your [[Space|space]].
 
 # Available plugs
 The [SilverBullet ‘Plugs’ category has a list of third-party plugs you can try](https://community.silverbullet.md/c/plugs/14).
@@ -18,7 +18,11 @@ The [SilverBullet ‘Plugs’ category has a list of third-party plugs you can t
 * [SilverSearch](https://github.com/MrMugame/silversearch): implements a better full text search
 * [TreeView](https://github.com/joekrill/silverbullet-treeview): adds a tree-view to your UI
 * [GraphView](https://github.com/deepkn/silverbullet-graphview): adds a graph view to your UI, similar to the one in Obsidian
+* [PDF](https://github.com/MrMugame/silverbullet-pdf): enables viewing and annotation of PDF documents with PDF.js
 * [Mermaid](https://github.com/silverbulletmd/silverbullet-mermaid): adds mermaid diagram rendering
+* [PlantUML](https://github.com/LogeshG5/silverbullet-plantuml): adds plantuml diagram rendering
+* [Draw.io](https://github.com/LogeshG5/silverbullet-drawio): adds drawio diagram rendering and editing
+* [Excalidraw](https://github.com/LogeshG5/silverbullet-excalidraw): adds excalidraw diagram rendering and editing
 
 # Development
 Want to develop your own plugs? Have a look at [[Plugs/Development]].

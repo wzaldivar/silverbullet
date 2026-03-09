@@ -1,49 +1,65 @@
-import type { IndexTreeEvent } from "../../type/event.ts";
-
 import {
+  cloneTree,
   findParentMatching,
   type ParseTree,
   renderToText,
-  traverseTreeAsync,
+  traverseTree,
 } from "@silverbulletmd/silverbullet/lib/tree";
-import {
-  cleanAttributes,
-  extractAttributes,
-} from "@silverbulletmd/silverbullet/lib/attribute";
-import { indexObjects } from "./api.ts";
-import {
-  cleanHashTags,
-  extractHashTags,
-  updateITags,
-} from "@silverbulletmd/silverbullet/lib/tags";
-import {
-  extractFrontMatter,
-  type FrontMatter,
-} from "@silverbulletmd/silverbullet/lib/frontmatter";
-import { deepClone } from "@silverbulletmd/silverbullet/lib/json";
-import type { ObjectValue } from "../../type/index.ts";
+import { cleanTags, collectTags, updateITags } from "./tags.ts";
+import type { FrontMatter } from "./frontmatter.ts";
+import type {
+  ObjectValue,
+  PageMeta,
+} from "@silverbulletmd/silverbullet/type/index";
+import { system } from "@silverbulletmd/silverbullet/syscalls";
+import { cleanAttributes, collectAttributes } from "./attribute.ts";
+import { collectPageLinks } from "./link.ts";
 
 export type ItemObject = ObjectValue<
   {
     page: string;
     name: string;
     text: string;
+    // Deprecated, use range instead
     pos: number;
+    // Deprecated, use range instead
+    toPos: number;
+    parent?: string;
+    links?: string[];
+    ilinks?: string[];
   } & Record<string, any>
 >;
 
-export async function indexItems({ name, tree }: IndexTreeEvent) {
-  const items = await extractItems(name, tree);
-  // console.log("Found", items, "item(s)");
-  await indexObjects(name, items);
-}
+export type TaskObject = ObjectValue<
+  // "Inherit" everyting from item
+  & ItemObject
+  // And add a few more attributes
+  & {
+    done: boolean;
+    state: string;
+  }
+  & Record<string, any>
+>;
 
-export async function extractItems(name: string, tree: ParseTree) {
-  const items: ObjectValue<ItemObject>[] = [];
+const completeStates = ["x", "X"];
 
-  const frontmatter = await extractFrontMatter(tree);
+export async function indexItems(
+  pageMeta: PageMeta,
+  frontmatter: FrontMatter,
+  tree: ParseTree,
+) {
+  const shouldIndexAllItems = await system.getConfig(
+    "index.item.all",
+    true,
+  );
+  const shouldIndexAllTasks = await system.getConfig(
+    "index.task.all",
+    true,
+  );
 
-  await traverseTreeAsync(tree, async (n) => {
+  let items: ObjectValue<ItemObject | TaskObject>[] = [];
+
+  traverseTree(tree, (n) => {
     if (n.type !== "ListItem") {
       return false;
     }
@@ -53,92 +69,104 @@ export async function extractItems(name: string, tree: ParseTree) {
       return true;
     }
 
-    // Is this a task?
-    if (n.children.find((n) => n.type === "Task")) {
-      // Skip tasks
-      return true;
-    }
-
-    const item: ItemObject = await extractItemFromNode(
-      name,
+    items.push(extractItemFromNode(
+      pageMeta.name,
       n,
       frontmatter,
-    );
+    ));
 
-    items.push(item);
-
+    // Traversal continue into child items (potentially)
     return false;
   });
+
+  if (!shouldIndexAllItems) {
+    items = items.filter((item) => item.tag !== "item" || item.tags?.length);
+  }
+  if (!shouldIndexAllTasks) {
+    items = items.filter((item) => item.tag !== "task" || item.tags?.length);
+  }
+
   return items;
 }
 
-export async function extractItemFromNode(
+export function extractItemFromNode(
   name: string,
   itemNode: ParseTree,
   frontmatter: FrontMatter,
-) {
-  const item: ItemObject = {
+  withParents = true,
+): ItemObject | TaskObject {
+  const item: ItemObject | TaskObject = {
     ref: `${name}@${itemNode.from}`,
     tag: "item",
-    name: "",
-    text: "",
-    page: name,
     pos: itemNode.from!,
+    toPos: itemNode.to!,
+    range: [itemNode.from!, itemNode.to!],
+    name: "", // to be replaced
+    text: "", // to be replaced
+    page: name,
   };
 
+  // This will only be valid for items, not task
+  let nameNode = itemNode.children!.find((n) => n.type === "Paragraph");
+
+  // Is this a task?
+  const taskNode = itemNode.children!.find((n) => n.type === "Task");
+  if (taskNode) {
+    item.tag = "task";
+    item.state = taskNode.children![0].children![1].text!;
+    item.done = completeStates.includes(item.state);
+    // Fake a paragraph node for text rendering later
+    nameNode = { type: "Paragraph", children: taskNode.children!.slice(1) };
+  }
+
   // Now let's extract tags and attributes
-  const tags = extractHashTags(itemNode);
-  const extractedAttributes = await extractAttributes(itemNode);
+  const tags = collectTags(itemNode);
+  const attributes = collectAttributes(itemNode);
+  const links = collectPageLinks(itemNode);
 
-  const clonedTextNodes: ParseTree[] = [];
+  item.text = renderToText(nameNode).trim();
 
-  for (const child of itemNode.children!.slice(1)) {
-    if (child.type === "OrderedList" || child.type === "BulletList") {
-      break;
-    }
-    clonedTextNodes.push(deepClone(child, ["parent"]));
-  }
-
-  // Original text
-  item.text = clonedTextNodes.map(renderToText).join("").trim();
-
-  // Clean out attribtus and tags and render a clean item name
-  for (const clonedTextNode of clonedTextNodes) {
-    cleanHashTags(clonedTextNode);
-    cleanAttributes(clonedTextNode);
-  }
-
-  item.name = clonedTextNodes.map(renderToText).join("").trim();
+  const nameNodeClone = cloneTree(nameNode!);
+  cleanTags(nameNodeClone);
+  cleanAttributes(nameNodeClone);
+  item.name = renderToText(nameNodeClone).trim();
 
   if (tags.length > 0) {
     item.tags = tags;
   }
 
-  for (const [key, value] of Object.entries(extractedAttributes)) {
+  if (links.length > 0) {
+    item.links = links;
+    item.ilinks = links;
+  }
+
+  for (const [key, value] of Object.entries(attributes)) {
     item[key] = value;
   }
 
   updateITags(item, frontmatter);
 
-  await enrichItemFromParents(itemNode, item, name, frontmatter);
+  if (withParents) {
+    enrichItemFromParents(itemNode, item, name, frontmatter);
+  }
 
   return item;
 }
 
-export async function enrichItemFromParents(
+export function enrichItemFromParents(
   n: ParseTree,
-  item: ObjectValue<any>,
+  item: ItemObject,
   pageName: string,
   frontmatter: FrontMatter,
 ) {
   let directParent = true;
   let parentItemNode = findParentMatching(n, (n) => n.type === "ListItem");
   while (parentItemNode) {
-    // console.log("Got parent", parentItemNode);
-    const parentItem = await extractItemFromNode(
+    const parentItem = extractItemFromNode(
       pageName,
       parentItemNode,
       frontmatter,
+      false,
     );
     if (directParent) {
       item.parent = parentItem.ref;
@@ -151,6 +179,17 @@ export async function enrichItemFromParents(
         ...(parentItem.itags!.filter((t) => !["item", "task"].includes(t))),
       ]),
     ];
+
+    // And links
+    const ilinks = [
+      ...new Set([
+        ...item.ilinks || [],
+        ...parentItem.ilinks || [],
+      ]),
+    ];
+    if (ilinks.length > 0) {
+      item.ilinks = ilinks;
+    }
 
     parentItemNode = findParentMatching(
       parentItemNode,

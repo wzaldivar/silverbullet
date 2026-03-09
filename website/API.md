@@ -1,4 +1,10 @@
-This describes the APIs available in [[Space Lua]]
-${template.each(query[[
-  from index.tag "page"  where string.startsWith(name, "API/")
-]], templates.pageItem)}
+This describes the APIs available in [[Space Lua]]:
+
+## Syscall APIs
+${template.each(query[[ from p = tags["api/syscall"] where p.tag == "page" order by p.name ]], templates.pageItem)}
+
+## Space Lua APIs
+${template.each(query[[ from p = tags["api/space-lua"] where p.tag == "page" order by p.name ]], templates.pageItem)}
+
+## Lua Standard Library
+${template.each(query[[ from p = tags["api/lua"] where p.tag == "page" order by p.name ]], templates.pageItem)}

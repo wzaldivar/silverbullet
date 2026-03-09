@@ -1,22 +1,25 @@
----
-testattribute: 10
----
+#api/syscall
 
-#apidoc
-
-The `index` API provides functions for interacting with SilverBullet's [[Objects]], allowing you to store and query page-associated data.
+The `index` API provides functions for interacting with SilverBullet's [[Object|Objects]], allowing you to store and query data.
 
 ## Object Operations
-
 ## index.tag(name)
-Returns a given [[Objects#Tags]] as a query collection, to be queried using [[Space Lua/Lua Integrated Query]].
+Returns a given [[Object#Tags]] as a query collection, to be queried using [[Space Lua/Lua Integrated Query]].
 
 Example:
-
 ${query[[from index.tag("page") limit 1]]}
 
+## index.markdown(text, pageMeta?)
+Ad-hoc indexes `text` (represented as a markdown string) in memory, and returns all objects found there for further query. When no `pageMeta` is supplied dummy (empty) values will be used.
+
+Example:
+${query[[
+  from index.markdown("* Item 1\n* [ ] Task 1")
+  where _.tag == "item"
+]]}
+
 ## index.indexObjects(page, objects)
-Indexes an array of objects for a specific page.
+Indexes an array of objects for a specific page and stores it in the data store.
 
 Example:
 ```lua
@@ -60,23 +63,3 @@ The `extractOptions` is an optional table that can contain the following keys (w
 
 Example applied to this page:
 ${(index.extractFrontmatter(editor.getText())).frontmatter}
-
-## index.defineTag(def)
-Allows you to attach a custom Lua metatable to objects part of a particular tag.
-
-### Example
-The following adds a custom attribute to all page objects that dynamically produces an ALL CAPS version of the page name:
-```space-lua
-index.defineTag {
-  name = "page",
-  metatable = {
-    __index = function(self, attr)
-      if attr == "loudName" then
-        return string.upper(self.name)
-      end
-    end
-  }
-}
-```
-In use:
-${query[[from index.tag "page" select {name=_.name, loudName=_.loudName} limit 3]]}

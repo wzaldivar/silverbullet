@@ -1,12 +1,19 @@
-import type { IndexTreeEvent } from "../../type/event.ts";
-import { extractHashtag } from "../../plug-api/lib/tags.ts";
+import {
+  renderToText,
+  replaceNodesMatching,
+} from "@silverbulletmd/silverbullet/lib/tree";
 import {
   collectNodesMatching,
   collectNodesOfType,
+  normalizeTableRow,
   type ParseTree,
 } from "@silverbulletmd/silverbullet/lib/tree";
-import { indexObjects } from "./api.ts";
-import type { ObjectValue } from "../../type/index.ts";
+import type {
+  ObjectValue,
+  PageMeta,
+} from "@silverbulletmd/silverbullet/type/index";
+import { extractHashtag } from "@silverbulletmd/silverbullet/lib/tags";
+import type { FrontMatter } from "./frontmatter.ts";
 
 type TableRowObject =
   & ObjectValue<{
@@ -28,13 +35,26 @@ function cleanHeaderFieldName(str: string): string {
 /**
  * Concat text properties of all child nodes
  * @param nodes
- * @returns
+ * @returns text of all child nodes
  */
 function concatChildrenTexts(nodes: ParseTree[]): string {
   return nodes.map((c) => c.text).join("").trim();
 }
 
-export async function indexTables({ name: pageName, tree }: IndexTreeEvent) {
+/**
+ * Concat text properties of all child nodes, preserving links
+ * @param nodes
+ * @returns text, preserving links, of all child nodes
+ */
+function concatChildrenTextsPreserveLinks(nodes: ParseTree[]): string {
+  return nodes.map((c) => renderToText(c)).join("").trim();
+}
+
+export function indexTables(
+  pageMeta: PageMeta,
+  _frontmatter: FrontMatter,
+  tree: ParseTree,
+) {
   const result: ObjectValue<TableRowObject>[] = [];
 
   collectNodesMatching(
@@ -43,31 +63,40 @@ export async function indexTables({ name: pageName, tree }: IndexTreeEvent) {
   ).forEach(
     (table) => {
       const rows = collectNodesOfType(table, "TableRow");
-      const header = collectNodesOfType(table, "TableHeader")[0]; //Use first header. As per markdown spec there can only be exactly one
+      const header = collectNodesOfType(table, "TableHeader")[0];
+      normalizeTableRow(header);
+      const headerHasLeadingDelim =
+        header.children?.[0]?.type === "TableDelimiter";
       const headerLabels = collectNodesOfType(header, "TableCell").map((cell) =>
         concatChildrenTexts(cell.children!)
       ).map(cleanHeaderFieldName);
-      //console.log("Header labels", headerLabels);
 
       for (const row of rows) {
         const tags = new Set<string>();
         collectNodesOfType(row, "Hashtag").forEach((h) => {
-          // Push tag to the list, removing the initial #
           tags.add(extractHashtag(h.children![0].text!));
         });
+
+        normalizeTableRow(row, headerLabels.length, headerHasLeadingDelim);
 
         const cells = collectNodesOfType(row, "TableCell");
 
         const tableRow: TableRowObject = {
-          tableref: `${pageName}@${table.from}`,
-          ref: `${pageName}@${row.from}`,
+          tableref: `${pageMeta.name}@${table.from}`,
+          ref: `${pageMeta.name}@${row.from}`,
           tag: "table",
           tags: [...tags],
-          page: pageName,
+          page: pageMeta.name,
           pos: row.from!,
+          range: [row.from!, row.to!],
         };
         cells.forEach((c, i) => {
-          const content = concatChildrenTexts(c.children!);
+          replaceNodesMatching(c, (tree) => {
+            if (tree.type === "Hashtag") {
+              return null;
+            }
+          });
+          const content = concatChildrenTextsPreserveLinks(c.children!);
           const label = headerLabels[i];
           tableRow[label!] = content;
         });
@@ -76,5 +105,5 @@ export async function indexTables({ name: pageName, tree }: IndexTreeEvent) {
     },
   );
 
-  await indexObjects(pageName, result);
+  return Promise.resolve(result);
 }

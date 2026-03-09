@@ -1,3 +1,5 @@
+#customization
+
 SilverBullet has a basic Vim mode. You can toggle it using the ${widgets.commandButton("Editor: Toggle Vim Mode")} command.
 
 In addition, it supports various ex commands that you can run as you would expect, for instance: `:imap jj <Esc>`.
@@ -7,6 +9,8 @@ The [[CONFIG]] file can also be used to define and extend these commands. It sup
 - **Key unmapping** - disable existing keybindings
 - **Custom mappings** - using `map` and `noremap`
 - **Ex command definitions** - map custom ex commands to built-in or custom SilverBullet commands
+
+SilverBullet [[Command]] bindings take precedence over Vim bindings, you may wish to update or disable some [[Keyboard Shortcuts]] or remap the desired functionality in Vim as shown below.
 
 To manually reload the `vim` section of your [[CONFIG]], use the ${widgets.commandButton("Editor: Vim: Load Vim Config")} command.
 

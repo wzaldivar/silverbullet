@@ -1,4 +1,4 @@
-# System API
+#api/syscall
 
 The System API provides system-level functions for interacting with the SilverBullet environment.
 
@@ -37,15 +37,6 @@ for _, syscall in ipairs(syscalls) do
 end
 ```
 
-### system.getEnv()
-Returns the runtime environment ("server", "client", or undefined for hybrid).
-
-Example:
-```lua
-local env = system.getEnv()
-print("Running in environment: " .. (env or "hybrid"))
-```
-
 ### system.getMode()
 Returns the current mode of the system ("ro" or "rw").
 
@@ -53,6 +44,15 @@ Example:
 ```lua
 local mode = system.getMode()
 print("System mode: " .. mode)
+```
+
+### system.getURLPrefix()
+Returns the prefix set by [[Install/Configuration|SB_URL_PREFIX]] or "/" if the variable isn't set
+
+Example:
+```lua
+local prefix = system.getURLPrefix()
+print("Prefix: " .. prefix)
 ```
 
 ### system.getVersion()
@@ -65,19 +65,6 @@ print("SilverBullet version: " .. version)
 ```
 
 ## Configuration
-
-### system.getConfig(key, defaultValue?)
-Gets a configuration value.
-
-Parameters:
-- `key`: The configuration key to get
-- `defaultValue`: Optional default value if the key is not set
-
-Example:
-```lua
-local theme = system.getConfig("theme", "light")
-print("Current theme: " .. theme)
-```
 
 ### system.reloadConfig()
 Triggers an explicit reload of the configuration.

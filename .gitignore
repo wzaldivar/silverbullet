@@ -1,14 +1,11 @@
 .env
 .DS_Store
-dist_client_bundle
-dist_plug_bundle
+client_bundle/client
+client_bundle/base_fs
 dist
 *.js.map
-website_build
-fly.toml
 env.sh
 node_modules
-*.db*
 test_space
 silverbullet
 silverbullet-*
@@ -16,3 +13,7 @@ deploy.json
 *.generated
 tmp_playground
 /public_version.ts
+website/_plug
+tmp
+.idea
+AGENTS.md

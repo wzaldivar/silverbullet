@@ -1,0 +1,34 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  args_bin = []
+  bin = "silverbullet"
+  cmd = "make"
+  # delay = 10000
+  exclude_dir = ["node_modules", "website", "scripts", "client_bundle", "dist"]
+  exclude_file = ["public_version.ts"]
+  exclude_regex = ["_test.go", ".test.ts"]
+  exclude_unchanged = false
+  follow_symlink = false
+  full_bin = ""
+  include_dir = []
+  include_ext = ["go", "html", "ts", "tsx", "scss", "md", "yaml"]
+  kill_delay = "0s"
+  log = "build-errors.log"
+  poll = false
+  poll_interval = 0
+  post_cmd = []
+  pre_cmd = []
+  stop_on_error = true
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[screen]
+  clear_on_rebuild = true
+  keep_scroll = true

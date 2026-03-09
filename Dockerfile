@@ -1,15 +1,25 @@
-
 # Stage 1: Build the silverbullet binary
-FROM denoland/deno:2.4.5 AS builder
-RUN apt update && apt install -y git
+# Use the Debian version of Deno as a base image
+FROM denoland/deno:debian-2.6.8 AS builder
+RUN apt update && apt install -y git wget make
+
+ARG TARGETARCH
+ENV GO_VERSION=1.25.1
+
+# Install Go
+RUN set -e; actual_arch=${TARGETARCH:-$(dpkg --print-architecture)}; wget -P /tmp "https://dl.google.com/go/go${GO_VERSION}.linux-${actual_arch}.tar.gz"; tar -C /usr/local -xzf "/tmp/go${GO_VERSION}.linux-${actual_arch}.tar.gz"; rm "/tmp/go${GO_VERSION}.linux-${actual_arch}.tar.gz"
+
+ENV GOPATH=/go
+ENV PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
+
 WORKDIR /app
 ADD . /app
 
-# This will produce the `silverbullet` self-contained binary in /app/silverbullet
-RUN deno task build
+# Build the `silverbullet` self-contained binary in /app/silverbullet
+RUN make build
 
 # Stage 2: Create the runtime from the build
-FROM ubuntu:noble
+FROM alpine:latest
 
 # The volume that will keep the space data
 VOLUME /space
@@ -21,22 +31,9 @@ VOLUME /space
 # Or simply mount an existing folder into the container:
 #   docker run -v /path/to/my/folder:/space -p3000:3000 -it ghcr.io/silverbulletmd/silverbullet
 
-# Accept TARGETARCH as argument
-ARG TARGETARCH
+RUN apk add --no-cache git curl bash tini libc6-compat
 
-# Adding tini
-ENV TINI_VERSION=v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
-
-RUN mkdir -p -m 777 /space \
-    && chmod +x /tini \
-    && apt update \
-    && apt install -y git curl \
-    && apt-get -y autoremove \
-    && apt-get clean  \
-    && rm -rf /tmp/* /var/tmp/* /var/log/* /usr/share/man /var/lib/apt/lists/*
-
-HEALTHCHECK CMD curl --fail http://localhost:3000/.ping || exit 1
+HEALTHCHECK CMD curl --fail http://localhost:$SB_PORT$SB_URL_PREFIX/.ping || exit 1
 
 # Expose port 3000
 # Port map this when running, e.g. with -p 3002:3000 (where 3002 is the host port)
@@ -45,6 +42,10 @@ EXPOSE 3000
 # Always binding to this IP, otherwise the server wouldn't be available
 ENV SB_HOSTNAME=0.0.0.0
 ENV SB_FOLDER=/space
+ENV SB_PORT=3000
+
+# Reset /etc/group and /etc/passwd
+RUN echo "" > /etc/group && echo "root:x:0:0:root:/root:/bin/sh" > /etc/passwd
 
 # As well as the docker-entrypoint.sh script
 ADD ./docker-entrypoint.sh /docker-entrypoint.sh
@@ -54,4 +55,4 @@ COPY --from=builder /app/silverbullet /silverbullet
 
 # Run the server, allowing to pass in additional argument at run time, e.g.
 #   docker run -p 3002:3000 -v myspace:/space -it ghcr.io/silverbulletmd/silverbullet --user me:letmein
-ENTRYPOINT ["/tini", "--", "/docker-entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint.sh"]

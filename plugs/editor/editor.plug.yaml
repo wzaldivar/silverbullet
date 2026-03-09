@@ -10,6 +10,10 @@ functions:
     path: "./editor.ts:toggleDarkMode"
     command:
       name: "Editor: Toggle Dark Mode"
+  toggleMarkdownSyntaxRendering:
+    path: "./editor.ts:toggleMarkdownSyntaxRendering"
+    command:
+      name: "Editor: Toggle Markdown Syntax Rendering"
   newWindow:
     path: editor.ts:newWindowCommand
     command:
@@ -37,6 +41,12 @@ functions:
       name: "Navigate: Meta Picker"
       key: "Ctrl-Shift-k"
       mac: "Cmd-Shift-k"
+
+  openTagNavigator:
+    path: editor.ts:openTagNavigator
+    command:
+      name: "Navigate: Tag Picker"
+      key: "Ctrl-Alt-t"
 
   openDocumentNavigator:
     path: editor.ts:openDocumentNavigator
@@ -80,13 +90,22 @@ functions:
     path: editor.ts:refreshAllWidgets
     command:
       name: "Widgets: Refresh All"
-      key: "Alt-q"
       requireEditor: page
 
   languageComplete:
     path: complete.ts:languageComplete
     events:
       - editor:complete
+
+  # Create page under cursor
+  createPageUnderCursorCommand:
+    path: "./navigate.ts:createPageUnderCursorCommand"
+    command:
+      name: "Page: Create Under Cursor"
+      key: "Ctrl-Shift-Enter"
+      mac: "Cmd-Shift-Enter"
+      requireEditor: page
+      requireMode: rw
 
   # Navigation
   linkNavigate:
@@ -96,40 +115,60 @@ functions:
       key: Ctrl-Enter
       mac: Cmd-Enter
       requireEditor: page
+
   clickNavigate:
     path: "./navigate.ts:clickNavigate"
     events:
       - page:click
+
   navigateHome:
     path: "./navigate.ts:navigateCommand"
     command:
       name: "Navigate: Home"
-      key: "Alt-h"
+      key: "Ctrl-g h"
       page: ""
+
   moveToPos:
     path: "./editor.ts:moveToPosCommand"
     command:
       name: "Navigate: To Position"
       requireEditor: page
+
+  copyRefCommand:
+    path: "./editor.ts:copyRefCommand"
+    command:
+      name: "Navigate: Copy Ref To Current Position"
+      requireEditor: page
+
+  copyLinkCommand:
+    path: "./editor.ts:copyLinkCommand"
+    command:
+      name: "Navigate: Copy Link To Current Position"
+      requireEditor: page
+
   moveToLine:
     path: "./editor.ts:moveToLineCommand"
     command:
       name: "Navigate: To Line"
       requireEditor: page
+
   navigateToPage:
     path: "./navigate.ts:navigateToPage"
     command:
       name: "Navigate: To Page"
       hide: true
+
   navigateToURL:
     path: "./navigate.ts:navigateToURL"
     command:
       name: "Navigate: To URL"
       hide: true
+
   navigateBack:
     path: "./navigate.ts:navigateBack"
     command:
       name: "Navigate: Back in History"
+
   navigateForward:
     path: "./navigate.ts:navigateForward"
     command:
@@ -194,7 +233,7 @@ functions:
     path: ./text.ts:wrapSelection
     command:
       name: "Text: Marker"
-      key: "Alt-m"
+      key: "Ctrl-Alt-m"
       wrapper: "=="
       requireMode: rw
       requireEditor: page
@@ -273,7 +312,9 @@ functions:
     path: ./outline.ts:moveItemUp
     command:
       name: "Outline: Move Up"
-      key: "Alt-ArrowUp"
+      key:
+        - "Alt-ArrowUp"
+        - "Mod-. k"
       requireMode: rw
       requireEditor: page
 
@@ -281,7 +322,9 @@ functions:
     path: ./outline.ts:moveItemDown
     command:
       name: "Outline: Move Down"
-      key: "Alt-ArrowDown"
+      key:
+        - "Alt-ArrowDown"
+        - "Mod-. j"
       requireMode: rw
       requireEditor: page
 
@@ -289,7 +332,7 @@ functions:
     path: ./outline.ts:indentItem
     command:
       name: "Outline: Move Right"
-      key: "Alt->"
+      key: "Mod-. l"
       requireMode: rw
       requireEditor: page
 
@@ -297,7 +340,7 @@ functions:
     path: ./outline.ts:outdentItem
     command:
       name: "Outline: Move Left"
-      key: "Alt-<"
+      key: "Mod-. h"
       requireMode: rw
       requireEditor: page
 
@@ -306,31 +349,27 @@ functions:
     path: ./outline.ts:foldCommand
     command:
       name: "Outline: Fold"
-      key: "Ctrl-Alt-["
       requireEditor: page
   unfoldCommand:
     path: ./outline.ts:unfoldCommand
     command:
       name: "Outline: Unfold"
-      key: "Ctrl-Alt-]"
       requireEditor: page
   toggleFoldCommand:
     path: ./outline.ts:toggleFoldCommand
     command:
       name: "Outline: Toggle Fold"
-      key: "Alt-Shift-f"
+      key: "Mod-. Mod-."
       requireEditor: page
   foldAllCommand:
     path: ./outline.ts:foldAllCommand
     command:
       name: "Outline: Fold All"
-      key: "Ctrl-Alt-Shift-["
       requireEditor: page
   unfoldAllCommand:
     path: ./outline.ts:unfoldAllCommand
     command:
       name: "Outline: Unfold All"
-      key: "Ctrl-Alt-Shift-]"
       requireEditor: page
   findInPageCommand:
     path: editor.ts:findInPageCommand
@@ -339,12 +378,6 @@ functions:
       key: "Ctrl-f"
       mac: "Cmd-f"
       requireEditor: page
-
-  # Outline helper functions
-  determineItemBounds:
-    path: ./outline.ts:determineItemBounds
-  ensureNewLine:
-    path: ./outline.ts:ensureNewLine
 
   # Undo/redo
   undoCommand:

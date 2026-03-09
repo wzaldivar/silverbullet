@@ -2,15 +2,48 @@ import {
   clientStore,
   codeWidget,
   editor,
+  index,
+  system,
 } from "@silverbulletmd/silverbullet/syscalls";
+import type { FilterOption } from "@silverbulletmd/silverbullet/type/client";
 
 // Run on "editor:init"
 export async function setEditorMode() {
+  // TODO: Remove at some point: temporary upgrade code
+  const allSyscalls = await system.listSyscalls();
+  // console.log("All syscalls", allSyscalls);
+  const queryLuaObjects = allSyscalls.find((sc) =>
+    sc.name === "index.queryLuaObjects"
+  );
+
+  // console.log(readPageWithMetaCall);
+
+  if (!queryLuaObjects) {
+    await editor.alert(
+      "Client needs reloading to update the cache, required syscalls are not available in this version. This message may appear a few times. Reloading now.",
+    );
+    editor.reloadUI();
+  }
+
   if (await clientStore.get("vimMode")) {
     await editor.setUiOption("vimMode", true);
   }
-  if (await clientStore.get("darkMode")) {
-    await editor.setUiOption("darkMode", true);
+  // Only set the darkmode value if it was deliberatly set in the clientstore,
+  // otherwise leave it so the client can choose depending on the system
+  // settings
+  const darkMode = await clientStore.get("darkMode");
+  if (darkMode != null) {
+    await editor.setUiOption("darkMode", darkMode);
+  }
+  const markdownSyntaxRendering = await clientStore.get(
+    "markdownSyntaxRendering",
+  );
+  if (markdownSyntaxRendering != null) {
+    await editor.setUiOption(
+      "markdownSyntaxRendering",
+      markdownSyntaxRendering,
+    );
+    await editor.rebuildEditorState();
   }
 }
 
@@ -24,6 +57,25 @@ export async function openPageNavigator() {
 
 export async function openMetaNavigator() {
   await editor.openPageNavigator("meta");
+}
+
+export async function openTagNavigator() {
+  // Query all tags with a matching parent
+  const allTags: FilterOption[] = (await index.queryLuaObjects<string>("tag", {
+    select: { type: "Variable", name: "name", ctx: {} as any },
+    distinct: true,
+  })).map((name) => ({ name }));
+
+  const selectedTag = await editor.filterBox(
+    "Open",
+    allTags,
+    "Press <tt>enter</tt> to go to the tag page of the selected tag.",
+    "Tag",
+  );
+  if (!selectedTag) {
+    return;
+  }
+  await editor.navigate(`tag:${selectedTag.name}`);
 }
 
 export async function openDocumentNavigator() {
@@ -41,25 +93,59 @@ export async function toggleDarkMode() {
   await editor.reloadUI();
 }
 
+export async function toggleMarkdownSyntaxRendering() {
+  let renderingSyntax = await editor.getUiOption(
+    "markdownSyntaxRendering",
+  );
+  renderingSyntax = !renderingSyntax;
+  await clientStore.set("markdownSyntaxRendering", renderingSyntax);
+  await editor.setUiOption("markdownSyntaxRendering", renderingSyntax);
+  await editor.rebuildEditorState();
+}
+
 export async function centerCursorCommand() {
   const pos = await editor.getCursor();
   await editor.moveCursor(pos, true);
 }
 
 export async function moveToPosCommand() {
-  const posString = await editor.prompt("Move to position:");
-  if (!posString) {
+  let posString = await editor.prompt("Move to position:");
+  if (posString === undefined) {
+    return;
+  }
+  posString = posString.trim();
+  if (posString === "") {
+    editor.flashNotification("Must provide a position.", "error");
     return;
   }
   const pos = +posString;
   await editor.moveCursor(pos, true); // showing the movement for better UX
 }
 
+export async function copyRefCommand() {
+  const page = await editor.getCurrentPage();
+  const pos = await editor.getCursor();
+  await editor.copyToClipboard(`[[${page}@${pos}]]`);
+  await editor.flashNotification("Ref copied to clipboard");
+}
+
+export async function copyLinkCommand() {
+  const page = await editor.getCurrentPage();
+  const pos = await editor.getCursor();
+  await editor.copyToClipboard(`${await system.getBaseURI()}${page}@${pos}`);
+  await editor.flashNotification("Link copied to clipboard");
+}
+
 export async function moveToLineCommand() {
-  const lineString = await editor.prompt(
+  let lineString = await editor.prompt(
     "Move to line (and optionally column):",
   );
-  if (!lineString) {
+  if (lineString === undefined) {
+    return;
+  }
+  lineString = lineString.trim();
+  if (lineString === "") {
+    editor.flashNotification("Must provide a line number.", "error");
     return;
   }
   // Match sequence of digits at the start, optionally another sequence

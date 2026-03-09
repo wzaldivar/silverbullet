@@ -1,6 +1,6 @@
 import { syscall } from "../syscall.ts";
-import type { CommandDef } from "../../lib/manifest.ts";
-import type { SyscallMeta } from "../../type/index.ts";
+import type { CommandDef } from "../types/manifest.ts";
+import type { SyscallMeta } from "@silverbulletmd/silverbullet/type/index";
 
 /**
  * System level syscalls
@@ -62,6 +62,20 @@ export function getMode(): Promise<"ro" | "rw"> {
 }
 
 /**
+ * Returns the prefix set by SB_URL_PREFIX or "/" if the variable isn't set
+ */
+export function getURLPrefix(): Promise<string> {
+  return syscall("system.getURLPrefix");
+}
+
+/**
+ * Returns the base URI for this SilverBullet isntance
+ */
+export function getBaseURI(): Promise<string> {
+  return syscall("system.getBaseURI");
+}
+
+/**
  * Returns the SilverBullet version
  */
 export function getVersion(): Promise<string> {
@@ -77,4 +91,12 @@ export function getConfig<T = any>(
 
 export function wipeClient(logout = false): Promise<void> {
   return syscall("system.wipeClient", logout);
+}
+
+/**
+ * DEPRECATED
+ * Deletes all IndexedDB databases that are not connected to client (e.g. legacy databases)
+ */
+export function cleanDatabases(): Promise<boolean> {
+  return syscall("system.cleanDatabases");
 }

@@ -1,10 +1,15 @@
-Space Style is [[Space Lua]]’s stylish sibling. It enables you to add your own styling to SilverBullet with `space-style` [[Markdown/Fenced Code Blocks]].
+---
+description: Custom CSS applied across your space via a special page.
+tags: customization glossary
+---
+
+Space Style is [[Space Lua]]’s stylish sibling. It enables you to add your own styling to SilverBullet with `space-style` [[Markdown/Fenced Code Block]].
 
 This can be used to achieve various things, such as overriding the default editor font or setting wider page widths. It is also possible to develop custom themes this way.
 
 To apply the updated styles, either reload the client or run the ${widgets.commandButton("System: Reload")} command.
 
-Many styles can be set with [variables](https://github.com/silverbulletmd/silverbullet/blob/main/web/styles/theme.scss) but not everything is covered. You’ll have to reverse-engineer those parts, unfortunately.
+Many styles can be set with [variables](https://github.com/silverbulletmd/silverbullet/blob/main/client/styles/theme.scss) but not everything is covered. You’ll have to reverse-engineer those parts, unfortunately.
 
 # Load order
 You can tweak the CSS load order style by including a `/* priority: number */` comment:

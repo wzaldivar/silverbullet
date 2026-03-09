@@ -1,1 +1,3 @@
-See [[^Library/Std/Command]]
+#api/space-lua
+
+See [[^Library/Std/APIs/Command]]

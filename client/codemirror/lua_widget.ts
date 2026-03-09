@@ -1,0 +1,393 @@
+import { WidgetType } from "@codemirror/view";
+import type { Client } from "../client.ts";
+import { renderMarkdownToHtml } from "../markdown_renderer/markdown_render.ts";
+import {
+  isLocalURL,
+  resolveMarkdownLink,
+} from "@silverbulletmd/silverbullet/lib/resolve";
+import { parse } from "../markdown_parser/parse_tree.ts";
+import { extendedMarkdownLanguage } from "../markdown_parser/parser.ts";
+import { renderToText } from "@silverbulletmd/silverbullet/lib/tree";
+import {
+  attachWidgetEventHandlers,
+  moveCursorIntoText,
+} from "./widget_util.ts";
+import { expandMarkdown } from "../markdown_renderer/inline.ts";
+import { luaFormatNumber, LuaTable } from "../space_lua/runtime.ts";
+import { isTaggedFloat } from "../space_lua/numeric.ts";
+import {
+  isBlockMarkdown,
+  jsonToMDTable,
+  refCellTransformer,
+} from "../markdown_renderer/result_render.ts";
+import { activeWidgets } from "./code_widget.ts";
+import type { Ref } from "@silverbulletmd/silverbullet/lib/ref";
+
+export type LuaWidgetCallback = (
+  bodyText: string,
+  pageName: string,
+) => Promise<LuaWidgetContent | null>;
+
+export type EventPayLoad = {
+  name: string;
+  data: any;
+};
+
+export type LuaWidgetContent = {
+  // Magic marker
+  _isWidget?: true;
+  // Render as HTML
+  html?: string | HTMLElement;
+  // Render as markdown
+  markdown?: string;
+  // CSS classes for wrapper
+  cssClasses?: string[];
+  display?: "block" | "inline";
+  // Event handlers
+  events?: Record<string, (event: EventPayLoad) => void>;
+} | string;
+
+export class LuaWidget extends WidgetType {
+  public dom?: HTMLElement;
+
+  constructor(
+    readonly client: Client,
+    // key to use for caching
+    readonly cacheKey: string,
+    // body text to send to widget renderer
+    readonly expressionText: string,
+    // code as it appears in the page (used to find when hitting the "edit" button)
+    readonly codeText: string,
+    readonly callback: LuaWidgetCallback,
+    private renderEmpty: boolean,
+    readonly inPage: boolean,
+    // Add open ref option
+    private openRef: Ref | null,
+  ) {
+    super();
+  }
+
+  override get estimatedHeight(): number {
+    return this.client.getCachedWidgetHeight(this.cacheKey);
+  }
+
+  toDOM(): HTMLElement {
+    const wrapperSpan = document.createElement("span");
+    wrapperSpan.className = "sb-lua-wrapper";
+    const innerDiv = document.createElement("div");
+    wrapperSpan.appendChild(innerDiv);
+    const cacheItem = this.client.getWidgetCache(this.cacheKey);
+    if (cacheItem) {
+      if (cacheItem.block) {
+        innerDiv.className += " sb-lua-directive-block";
+      } else {
+        innerDiv.className += " sb-lua-directive-inline";
+      }
+      // This is to make the initial render faster, will later be replaced by the actual content
+      innerDiv.replaceChildren(
+        this.wrapHtml(!!cacheItem.block, cacheItem.html, cacheItem.copyContent),
+      );
+    }
+
+    // Async kick-off of content renderer
+    this.renderContent(innerDiv).catch(console.error);
+    this.dom = wrapperSpan;
+    return wrapperSpan;
+  }
+
+  async renderContent(
+    div: HTMLElement,
+  ) {
+    const currentName = this.client.currentName();
+    let widgetContent = await this.callback(
+      this.expressionText,
+      currentName,
+    );
+    activeWidgets.add(this);
+    if (widgetContent === null || widgetContent === undefined) {
+      if (!this.renderEmpty) {
+        div.innerHTML = "";
+        this.client.setWidgetCache(
+          this.cacheKey,
+          { html: "", block: false },
+        );
+        this.client.setCachedWidgetHeight(this.cacheKey, div.clientHeight);
+        return;
+      }
+      widgetContent = { markdown: "nil", _isWidget: true };
+    }
+
+    let html: HTMLElement | undefined;
+    let block = false;
+    let copyContent: string | undefined = undefined;
+
+    // Normalization
+    if (typeof widgetContent === "string" || !widgetContent._isWidget) {
+      // Apply heuristic to render the object as a markdown table
+      widgetContent = {
+        _isWidget: true,
+        markdown: await renderExpressionResult(widgetContent),
+      };
+    }
+
+    if (widgetContent.cssClasses) {
+      div.className = widgetContent.cssClasses.join(" ");
+    }
+    if (widgetContent.html) {
+      if (typeof widgetContent.html === "string") {
+        html = parseHtmlString(widgetContent.html);
+        copyContent = widgetContent.html;
+      } else {
+        html = widgetContent.html;
+        copyContent = widgetContent.html.outerHTML;
+      }
+
+      block = widgetContent.display === "block";
+      if (block) {
+        div.className += " sb-lua-directive-block";
+      } else {
+        div.className += " sb-lua-directive-inline";
+      }
+    }
+    if (widgetContent.markdown) {
+      let mdTree = parse(
+        extendedMarkdownLanguage,
+        widgetContent.markdown || "",
+      );
+
+      mdTree = await expandMarkdown(
+        client.space,
+        currentName,
+        mdTree,
+        client.clientSystem.spaceLuaEnv,
+      );
+      const trimmedMarkdown = renderToText(mdTree).trim();
+
+      copyContent = trimmedMarkdown;
+
+      if (!trimmedMarkdown) {
+        // Net empty result after expansion
+        div.innerHTML = "";
+        this.client.setWidgetCache(
+          this.cacheKey,
+          { html: "", block: false },
+        );
+        this.client.setCachedWidgetHeight(this.cacheKey, div.clientHeight);
+        return;
+      }
+
+      block = widgetContent._isWidget && widgetContent.display === "block" ||
+        isBlockMarkdown(trimmedMarkdown);
+      if (block) {
+        div.className += " sb-lua-directive-block";
+      } else {
+        div.className += " sb-lua-directive-inline";
+      }
+
+      // Parse the markdown again after trimming
+      mdTree = parse(
+        extendedMarkdownLanguage,
+        trimmedMarkdown,
+      );
+
+      html = parseHtmlString(renderMarkdownToHtml(mdTree, {
+        shortWikiLinks: this.client.config.get("shortWikiLinks", false),
+        translateUrls: (url) => {
+          if (isLocalURL(url)) {
+            url = resolveMarkdownLink(
+              this.client.currentName(),
+              decodeURI(url),
+            );
+          }
+
+          return url;
+        },
+        preserveAttributes: true,
+      }, this.client.ui.viewState.allPages));
+    }
+    if (html) {
+      div.replaceChildren(this.wrapHtml(block, html, copyContent));
+      attachWidgetEventHandlers(
+        div,
+        this.client,
+        this.inPage ? this.codeText : undefined,
+        widgetContent._isWidget && widgetContent.events,
+      );
+    }
+
+    // Let's give it a tick, then measure and cache
+    setTimeout(() => {
+      this.client.setWidgetCache(
+        this.cacheKey,
+        {
+          html: html?.outerHTML || "",
+          block,
+          copyContent: copyContent,
+        },
+      );
+      this.client.setCachedWidgetHeight(this.cacheKey, div.offsetHeight);
+      // Because of the rejiggering of the DOM, we need to do a no-op cursor move to make sure it's positioned correctly
+      this.client.editorView.dispatch({
+        selection: this.client.editorView.state.selection,
+      });
+    });
+  }
+
+  wrapHtml(
+    isBlock: boolean,
+    html: string | HTMLElement,
+    copyContent: string | undefined,
+  ): HTMLElement {
+    if (typeof html === "string") {
+      html = parseHtmlString(html);
+    }
+    if (!isBlock) {
+      return html;
+    }
+    const container = document.createElement("div");
+    const buttonBar = document.createElement("div");
+    buttonBar.className = "button-bar";
+
+    const createButton = (
+      { title, icon, listener }: {
+        title: string;
+        icon: string;
+        listener: (event: MouseEvent) => void;
+      },
+    ) => {
+      const button = document.createElement("button");
+      button.setAttribute("data-button", title.toLowerCase());
+      button.setAttribute("title", title);
+      button.innerHTML = icon;
+      button.addEventListener("click", listener);
+
+      return button;
+    };
+
+    buttonBar.appendChild(createButton(
+      {
+        title: "Reload",
+        icon:
+          '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-refresh-cw"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
+        listener: (e) => {
+          e.stopPropagation();
+          this.client.clientSystem.localSyscall(
+            "system.invokeFunction",
+            ["index.refreshWidgets"],
+          ).catch(console.error);
+        },
+      },
+    ));
+
+    if (copyContent) {
+      buttonBar.appendChild(createButton(
+        {
+          title: "Copy",
+          icon:
+            `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
+          listener: (e) => {
+            e.stopPropagation();
+            this.client.clientSystem.localSyscall(
+              "editor.copyToClipboard",
+              [copyContent],
+            ).catch(console.error);
+          },
+        },
+      ));
+    }
+
+    if (this.inPage) {
+      buttonBar.appendChild(createButton(
+        {
+          title: "Edit",
+          icon:
+            '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
+          listener: (e) => {
+            e.stopPropagation();
+            moveCursorIntoText(this.client, this.codeText);
+          },
+        },
+      ));
+    }
+
+    if (this.openRef) {
+      buttonBar.appendChild(createButton(
+        {
+          title: "Open",
+          icon:
+            '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="css-i6dzq1"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+          listener: (e) => {
+            e.stopPropagation();
+            this.client.navigate(this.openRef!);
+          },
+        },
+      ));
+    }
+
+    const content = document.createElement("div");
+    content.className = "content";
+    content.appendChild(html);
+
+    container.appendChild(buttonBar);
+    container.appendChild(content);
+
+    return container;
+  }
+
+  override eq(other: WidgetType): boolean {
+    return (
+      other instanceof LuaWidget &&
+      other.expressionText === this.expressionText &&
+      other.cacheKey === this.cacheKey
+    );
+  }
+}
+
+export function renderExpressionResult(result: any): Promise<string> {
+  if (result instanceof LuaTable) {
+    result = result.toJS();
+  }
+  // Must check before object/array checks — tagged floats are plain objects
+  if (isTaggedFloat(result)) {
+    return Promise.resolve(luaFormatNumber(result.value, "float"));
+  }
+  if (typeof result === "number") {
+    return Promise.resolve(luaFormatNumber(result));
+  }
+  if (
+    Array.isArray(result) && result.length > 0 && typeof result[0] === "object"
+  ) {
+    // If result is an array of objects, render as a Markdown table
+    try {
+      return jsonToMDTable(result, refCellTransformer);
+    } catch (e: any) {
+      console.error(
+        `Error rendering expression directive: ${e.message} for value ${
+          JSON.stringify(result)
+        }`,
+      );
+      return Promise.resolve(JSON.stringify(result));
+    }
+  } else if (typeof result === "object" && result.constructor === Object) {
+    // If result is a plain object, render as a Markdown table
+    return jsonToMDTable([result], refCellTransformer);
+  } else if (Array.isArray(result)) {
+    // Not-object array, let's render it as a Markdown list
+    return Promise.resolve(result.map((item) => `- ${item}`).join("\n"));
+  } else {
+    return Promise.resolve("" + result);
+  }
+}
+
+export function parseHtmlString(html: string): HTMLElement {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  // Create a wrapper div to hold all elements
+  const wrapper = document.createElement("span");
+  wrapper.className = "wrapper";
+  // Move all body children into the wrapper
+  while (doc.body.firstChild) {
+    wrapper.appendChild(doc.body.firstChild);
+  }
+  return wrapper;
+}

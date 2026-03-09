@@ -1,3 +1,5 @@
+#api/syscall
+
 The Editor API provides functions for interacting with the editor interface.
 
 ### editor.getCurrentPage()
@@ -33,6 +35,15 @@ Example:
 ```lua
 local text = editor.getText()
 print("Document length: " .. #text)
+```
+
+### editor.getCurrentLine()
+Returns the current line range and text.
+
+Example:
+```lua
+local line = editor.getCurrentLine()
+print("from " .. line.from .. " to " .. line.to .. " text " .. line.text .. " text with cursor " .. line.textWithCursor)
 ```
 
 ### editor.setText(text, isolateHistory)
@@ -130,7 +141,7 @@ editor.save()
 Navigates to the specified page reference.
 
 Parameters:
-- `ref`: The (string) reference to navigate to, see [[Links#Link syntax (String refs)|string refs]]
+- `ref`: The (string) reference to navigate to, see [[../Link#Link syntax (String refs)|string refs]]
 - `replaceState`: Whether to replace the current history state
 - `newWindow`: Whether to open in a new window
 
@@ -255,6 +266,9 @@ print("Uploaded: " .. file.name)
 ### editor.copyToClipboard(data)
 Copies data to the clipboard.
 
+> **note** Note
+> Requires HTTPS, see [[Install/Network and Internet]]
+
 Example:
 ```lua
 editor.copyToClipboard("Copied text")
@@ -325,6 +339,14 @@ Deletes the current line.
 Example:
 ```lua
 editor.deleteLine()
+```
+
+### editor.toggleComment()
+Comments or uncomments the current line.
+
+Example:
+```lua
+editor.toggleComment()
 ```
 
 ### editor.moveLineUp()

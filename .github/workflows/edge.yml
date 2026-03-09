@@ -13,15 +13,18 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.4.3
-      - name: Compile for all platforms
+          deno-version: v2.6.8
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25.1"
+      - name: Compile frontend and plug-compile with Deno
         run: |
-          deno task build
-          deno task server:zip:linux-x86_64
-          deno task server:zip:linux-aarch64
-          deno task server:zip:darwin-x86_64
-          deno task server:zip:darwin-aarch64
-          deno task server:zip:windows-x86_64
+          deno task build-production
+          deno task build-plug-compile
+      - name: Build Go binaries for multiple platforms
+        run: make build-server-releases
+
       - name: Update edge release
         uses: softprops/action-gh-release@v1
         env:
@@ -34,5 +37,4 @@ jobs:
           files: |
             website/CHANGELOG.md
             dist/plug-compile.js
-            dist/silverbullet.js
             silverbullet-*.zip

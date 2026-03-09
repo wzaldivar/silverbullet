@@ -1,4 +1,5 @@
 import { editor, space } from "@silverbulletmd/silverbullet/syscalls";
+import { notFoundError } from "@silverbulletmd/silverbullet/constants";
 
 export async function deletePage() {
   const pageName = await editor.getCurrentPage();
@@ -9,9 +10,12 @@ export async function deletePage() {
   }
   // Query for last
   const recentlyOpenedPages = await editor.getRecentlyOpenedPages();
-  // Find the the first page that is not the current page
+  const allPages = await space.listPages();
+  const existingPageNames = new Set(allPages.map((p) => p.name));
+
+  // Find the first recently opened page that still exists and is not the current page
   const firstRecentlyOpenedPage = recentlyOpenedPages.find(
-    (page) => page.name !== pageName,
+    (page) => page.name !== pageName && existingPageNames.has(page.name),
   );
   await space.deletePage(pageName);
   console.log("Navigating to previous page");
@@ -27,9 +31,13 @@ export async function copyPage(
   const fromName = sourcePage || currentPage;
   const suggestedName = toName || fromName;
 
-  const newName = await editor.prompt(`Copy to page:`, suggestedName);
-
-  if (!newName) {
+  let newName = await editor.prompt(`Copy to page:`, suggestedName);
+  if (newName === undefined) {
+    return;
+  }
+  newName = newName.trim();
+  if (newName === "") {
+    editor.flashNotification("Must provide a non-empty page name.", "error");
     return;
   }
 
@@ -41,7 +49,7 @@ export async function copyPage(
       `"${newName}" already exists, cannot copy to existing page.`,
     );
   } catch (e: any) {
-    if (e.message === "Not found") {
+    if (e.message === notFoundError.message) {
       // Expected not found error, so we can continue
     } else {
       await editor.flashNotification(e.message, "error");

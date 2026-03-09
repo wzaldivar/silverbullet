@@ -1,4 +1,6 @@
-APIs to create [[Slash Commands]]. For simple cases it is recommended to use [[Library/Std/Slash Templates]] instead.
+#api/space-lua
+
+APIs to create [[Slash Command]]. For simple cases it is recommended to use [[Library/Std/Infrastructure/Slash Templates]] instead.
 
 ## slashCommand.define(spec)
 

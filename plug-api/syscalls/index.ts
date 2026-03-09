@@ -1,6 +1,6 @@
-import type { LuaCollectionQuery } from "../../lib/space_lua/query_collection.ts";
+import type { LuaCollectionQuery } from "../../client/space_lua/query_collection.ts";
 import { syscall } from "@silverbulletmd/silverbullet/syscall";
-import type { ObjectValue } from "../../type/index.ts";
+import type { ObjectValue } from "../../plug-api/types/index.ts";
 
 /**
  * Exposes the SilverBullet object indexing system
@@ -18,6 +18,13 @@ export function indexObjects<T>(
   objects: ObjectValue<T>[],
 ): Promise<void> {
   return syscall("index.indexObjects", page, objects);
+}
+
+export function validateObjects<T>(
+  page: string,
+  objects: ObjectValue<T>[],
+): Promise<{ error: string; object: ObjectValue } | null> {
+  return syscall("index.validateObjects", page, objects);
 }
 
 /**
@@ -48,4 +55,23 @@ export function getObjectByRef<T>(
   ref: string,
 ): Promise<ObjectValue<T> | undefined> {
   return syscall("index.getObjectByRef", page, tag, ref);
+}
+
+/**
+ * Ensures that the full index is built and up-to-date
+ */
+export function ensureFullIndex(): Promise<void> {
+  return syscall("index.ensureFullIndex");
+}
+
+export function reindexSpace(): Promise<void> {
+  return syscall("index.reindexSpace");
+}
+
+export function deleteObject(
+  page: string,
+  tag: string,
+  ref: string,
+): Promise<void> {
+  return syscall("index.deleteObject", page, tag, ref);
 }

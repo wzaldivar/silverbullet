@@ -1,4 +1,4 @@
-In [[SilverBullet]] every [[Pages|page]] or [[Documents|document]] has a name. Names are (currently) unique, meaning no two pages or documents can share the same name.
+In [[SilverBullet]] every [[Page|page]] or [[Document|document]] has a name. Names are (currently) unique, meaning no two pages or documents can share the same name.
 
 # Rules
 Names _must_ also follow certain rules:
@@ -22,3 +22,6 @@ Names _must_ also follow certain rules:
 - “.foo”
 - “foo//bar”
 - “foo/../bar”
+
+# Special characters
+Certain HTTP reverse proxies may block “suspicious” characters (such as `?`, `#` and `;`) by default, including Traefik, [see this thread](https://community.silverbullet.md/t/traefik-proxied-setups-block-page-names-with-fix/3724/2) on how to work around this.

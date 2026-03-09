@@ -1,9 +1,13 @@
+#getting-started
+
 SilverBullet is primarily configured via environment variables. This page gives a comprehensive overview of all configuration options. You can set these ad-hoc when running the SilverBullet server, or e.g. in your [[Install/Docker|docker-compose file]].
 
 # General configuration
 
 * `SB_INDEX_PAGE`: Sets the default page to load, defaults to `index`.
 * `SB_SPACE_IGNORE`: Ignore certain path patterns based on a .gitignore style format, e.g. `SB_SPACE_IGNORE="IgnoreMe/*"`.
+* `SB_HTTP_LOGGING`: Set to any value to enable HTTP logging
+* `SB_LOG_PUSH`: Set to any value to ask clients to push their logs to the server (for debugging purposes)
 
 # Network
 * `SB_HOSTNAME`: Set to the hostname to bind to (defaults to `127.0.0.0`, set to `0.0.0.0` to accept outside connections for the local deno setup, defaults to `0.0.0.0` for docker)
@@ -16,10 +20,11 @@ SilverBullet supports basic authentication for a single user.
 * `SB_USER`: Sets single-user credentials, e.g. `SB_USER=pete:1234` allows you to login with username “pete” and password “1234”.
 * `SB_AUTH_TOKEN`: Enables `Authorization: Bearer <token>` style authentication on the [[HTTP API]].
 * `SB_LOCKOUT_LIMIT`: Specifies the number of failed login attempt before locking the user out (for a `SB_LOCKOUT_TIME` specified amount of seconds), defaults to `10`
-* `SB_LOCKOUT_TIME`: Specifies the amount of time (in seconds) a client will be blocked until attempting to log back in.
+* `SB_LOCKOUT_TIME`: Specifies the amount of time (in seconds) a client will be blocked until attempting to log back in, defaults to `60`.
+* `SB_REMEMBER_ME_HOURS`: Sets the session duration in hours when "Remember me" is checked during login, defaults to 7 days.
 
 # Storage
-SilverBullet supports storage backends for keeping your [[Spaces]] content. Right now the only supported backend is to use your local disk.
+SilverBullet supports storage backends for keeping your [[Space]] content. Right now the only supported backend is to use your local disk.
 
 ## Disk storage
 This is the default and simplest backend to use: a folder on disk. It is configured as follows:
@@ -42,8 +47,13 @@ Configuration only relevant to docker deployments:
 * `PUID`: Runs the server process with the specified UID (default: whatever user owns the `/space` mapped folder)
 * `PGID`: Runs the server process with the specified GID (default: whatever group owns the `/space` mapped folder)\
 
+# Metrics
+SilverBullet offers a few basic Prometheus metrics, these can be configured with the following environment variables:
+
+* `SB_METRICS_PORT`: HTTP port to expose metrics (under the default `/metrics` endpoint) on
+
 # Web app manifest
-Configure aspects of web app appearance:
+Configure aspects of web app appearance as well as the authentication page:
 
 * `SB_NAME`: Sets `name` and `short_name` members of web app manifest to whatever specified in `SB_NAME`
 * `SB_DESCRIPTION`: Sets `description` member of web app manifest to whatever specified in `SB_DESCRIPTION`

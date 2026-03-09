@@ -6,7 +6,9 @@ export const builtinPlugNames = [
   "sync",
   "plug-manager",
   "emoji",
-  "tasks",
-  "search",
   "image-viewer",
 ];
+
+export const builtinPlugPaths = builtinPlugNames.map((name) =>
+  `Library/Std/Plugs/${name}.plug.js`
+);

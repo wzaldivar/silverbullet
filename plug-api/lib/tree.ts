@@ -1,3 +1,5 @@
+import { deepClone } from "@silverbulletmd/silverbullet/lib/json";
+
 export type ParseTree = {
   type?: string; // undefined === text node
   from?: number;
@@ -13,10 +15,6 @@ export function addParentPointers(tree: ParseTree) {
     return;
   }
   for (const child of tree.children) {
-    if (child.parent) {
-      // Already added parent pointers before
-      return;
-    }
     child.parent = tree;
     addParentPointers(child);
   }
@@ -93,7 +91,7 @@ export function replaceNodesMatching(
   tree: ParseTree,
   substituteFn: (tree: ParseTree) => ParseTree | null | undefined,
 ) {
-  if (tree.children) {
+  if (tree && tree.children) {
     const children = tree.children.slice();
     for (const child of children) {
       const subst = substituteFn(child);
@@ -167,6 +165,10 @@ export async function traverseTreeAsync(
   await collectNodesMatchingAsync(tree, matchFn);
 }
 
+export function cloneTree(tree: ParseTree): ParseTree {
+  return deepClone(tree, ["parent"]);
+}
+
 // Finds non-text node at position
 export function nodeAtPos(tree: ParseTree, pos: number): ParseTree | null {
   if (pos < tree.from! || pos >= tree.to!) {
@@ -180,12 +182,60 @@ export function nodeAtPos(tree: ParseTree, pos: number): ParseTree | null {
     if (n && n.text !== undefined) {
       // Got a text node, let's return its parent
       return tree;
-    } else if (n) {
+    }
+    if (n) {
       // Got it
       return n;
     }
   }
   return null;
+}
+
+// Ensure a TableRow/TableHeader has a TableCell between every pair of
+// TableDelimiters, and optionally pad to match columnCount.
+// headerHasLeadingDelim indicates whether the header starts with a delimiter.
+export function normalizeTableRow(
+  row: ParseTree,
+  columnCount?: number,
+  headerHasLeadingDelim?: boolean,
+): void {
+  const children = row.children;
+  if (!children) return;
+  const normalized: ParseTree[] = [];
+  let lookingForCell = false;
+  for (const child of children) {
+    if (child.type === "TableDelimiter" && lookingForCell) {
+      normalized.push({ type: "TableCell", children: [] });
+    }
+    if (child.type === "TableDelimiter") {
+      lookingForCell = true;
+    }
+    if (child.type === "TableCell") {
+      lookingForCell = false;
+    }
+    normalized.push(child);
+  }
+  row.children = normalized;
+
+  // Fix leading-pipe mismatch: row has leading delimiter but header doesn't
+  if (headerHasLeadingDelim === false) {
+    if (row.children.length > 0 && row.children[0].type === "TableDelimiter") {
+      // Insert empty cell after the leading delimiter
+      row.children.splice(1, 0, { type: "TableCell", children: [] });
+    }
+  }
+
+  // Pad trailing empty cells to match header column count
+  if (columnCount !== undefined) {
+    let cellCount = 0;
+    for (const child of row.children) {
+      if (child.type === "TableCell") cellCount++;
+    }
+    while (cellCount < columnCount) {
+      row.children.push({ type: "TableCell", children: [] });
+      cellCount++;
+    }
+  }
 }
 
 // Turn ParseTree back into text

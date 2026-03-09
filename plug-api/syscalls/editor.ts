@@ -1,10 +1,7 @@
 import { syscall } from "../syscall.ts";
-import type {
-  FilterOption,
-  UploadFile,
-} from "@silverbulletmd/silverbullet/type/client";
+import type { FilterOption, UploadFile } from "../../plug-api/types/client.ts";
 import type { Path, Ref } from "../lib/ref.ts";
-import type { PageMeta } from "../../type/index.ts";
+import type { PageMeta } from "../../plug-api/types/index.ts";
 
 /**
  * Exposes various editor utilities.
@@ -252,7 +249,7 @@ export function filterBox(
 export function showPanel(
   id: "lhs" | "rhs" | "bhs" | "modal",
   mode: number,
-  html: string,
+  html: HTMLElement | HTMLElement[] | string,
   script = "",
 ): Promise<void> {
   return syscall("editor.showPanel", id, mode, html, script);
@@ -469,6 +466,13 @@ export function deleteLine(): Promise<void> {
   return syscall("editor.deleteLine");
 }
 
+/**
+ * Comment or uncomment the current line in the editor
+ */
+export function toggleComment(): Promise<void> {
+  return syscall("editor.toggleComment");
+}
+
 export function moveLineUp(): Promise<void> {
   return syscall("editor.moveLineUp");
 }
@@ -503,4 +507,11 @@ export function configureVimMode(): Promise<any> {
  */
 export function sendMessage(type: string, data?: any): Promise<void> {
   return syscall("editor.sendMessage", type, data);
+}
+
+/**
+ * Check if the editor is running on a mobile device
+ */
+export function isMobile(): Promise<boolean> {
+  return syscall("editor.isMobile");
 }

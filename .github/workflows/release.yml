@@ -19,10 +19,11 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.4.5
+          deno-version: v2.6.8
       - name: Run build
         run: |
-          deno task build
+          deno task build-production
+          deno task build-plug-compile
       - name: Publish to JSR
         run: deno publish --allow-dirty
       - name: Release
@@ -34,4 +35,3 @@ jobs:
           files: |
             website/CHANGELOG.md
             dist/plug-compile.js
-            dist/silverbullet.js

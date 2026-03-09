@@ -1,0 +1,159 @@
+import type { ComponentChildren, FunctionalComponent } from "preact";
+import type { Notification } from "@silverbulletmd/silverbullet/type/client";
+import { MiniEditor } from "./mini_editor.tsx";
+
+export type ActionButton = {
+  icon: FunctionalComponent<any>;
+  description: string;
+  class?: string;
+  callback: () => void;
+  href?: string;
+  mobile?: boolean;
+};
+
+export function TopBar({
+  pageName,
+  unsavedChanges,
+  isOnline,
+  isLoading,
+  notifications,
+  onRename,
+  actionButtons,
+  darkMode,
+  vimMode,
+  progressPercentage,
+  progressType,
+  lhs,
+  onClick,
+  rhs,
+  pageNamePrefix,
+  cssClass,
+  mobileMenuStyle,
+}: {
+  pageName?: string;
+  unsavedChanges: boolean;
+  isOnline: boolean;
+  isLoading: boolean;
+  notifications: Notification[];
+  darkMode?: boolean;
+  vimMode: boolean;
+  progressPercentage?: number;
+  progressType?: string;
+  onRename: (newName?: string) => Promise<void>;
+  onClick: () => void;
+  actionButtons: ActionButton[];
+  lhs?: ComponentChildren;
+  rhs?: ComponentChildren;
+  pageNamePrefix?: string;
+  cssClass?: string;
+  mobileMenuStyle?: string;
+}) {
+  return (
+    <div
+      id="sb-top"
+      className={isOnline ? undefined : "sb-sync-error"}
+      onClick={onClick}
+    >
+      {lhs}
+      <div className="main">
+        <div className="inner">
+          <div className="wrapper">
+            <div className="sb-page-prefix">{pageNamePrefix}</div>
+            <span
+              id="sb-current-page"
+              className={(isLoading
+                ? "sb-loading"
+                : unsavedChanges
+                ? "sb-unsaved"
+                : "sb-saved") +
+                (cssClass ? " sb-decorated-object " + cssClass : "")}
+            >
+              <MiniEditor
+                text={pageName ?? ""}
+                vimMode={vimMode}
+                darkMode={darkMode}
+                onBlur={(newName) => {
+                  if (newName !== pageName) {
+                    return onRename(newName);
+                  } else {
+                    return onRename();
+                  }
+                }}
+                onEnter={(newName) => {
+                  onRename(newName);
+                }}
+                editable={!client.ui.viewState.uiOptions.forcedROMode &&
+                  !client.bootConfig.readOnly}
+              />
+            </span>
+            {notifications.length > 0 && (
+              <div className="sb-notifications">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`sb-notification-${notification.type}`}
+                  >
+                    {notification.message}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="sb-sync-progress">
+              {progressPercentage !== undefined &&
+                (
+                  <div
+                    className="progress-wrapper"
+                    title={`${progressType} progress: ${progressPercentage}%`}
+                  >
+                    <div
+                      className="progress-bar"
+                      style={`background: radial-gradient(closest-side, var(--top-background-color) 79%, transparent 80% 100%), conic-gradient(var(--progress-${progressType}-color) ${progressPercentage}%, var(--progress-background-color) 0);`}
+                    >
+                      {progressPercentage}
+                    </div>
+                  </div>
+                )}
+            </div>
+            <div
+              className={"sb-actions " +
+                (mobileMenuStyle ? mobileMenuStyle : "")}
+            >
+              {actionButtons.map((actionButton) => {
+                const button = (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      actionButton.callback();
+                    }}
+                    onBlur={() => {
+                      // Close the hamburger menu in mobile mode if the action button loses focus after callback
+                      if (mobileMenuStyle === "hamburger") {
+                        document.querySelector("#sb-top .sb-actions.hamburger")
+                          ?.classList.remove("open");
+                      }
+                    }}
+                    title={actionButton.description}
+                    className={actionButton.class}
+                  >
+                    <actionButton.icon size={18} />
+                  </button>
+                );
+
+                return actionButton.href
+                  ? (
+                    <a href={actionButton.href} key={actionButton.href}>
+                      {button}
+                    </a>
+                  )
+                  : button;
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+      {rhs}
+    </div>
+  );
+}

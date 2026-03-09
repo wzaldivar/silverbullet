@@ -1,14 +1,18 @@
 import { folderName } from "@silverbulletmd/silverbullet/lib/resolve";
-import { queryLuaObjects } from "../index/api.ts";
-import { language, lua } from "@silverbulletmd/silverbullet/syscalls";
-import type { DocumentMeta, PageMeta } from "../../type/index.ts";
+import { index, language, lua } from "@silverbulletmd/silverbullet/syscalls";
+import type {
+  DocumentMeta,
+  PageMeta,
+} from "@silverbulletmd/silverbullet/type/index";
 import type { CompleteEvent } from "@silverbulletmd/silverbullet/type/client";
 
 // Page completion
 export async function pageComplete(completeEvent: CompleteEvent) {
   const isDocumentQuery = {
     objectVariable: "_",
-    where: await lua.parseExpression(`not string.startsWith(_.name, "_")`),
+    where: await lua.parseExpression(
+      `not string.startsWith(_.name, "_") and not string.endsWith(_.name, ".plug.js")`,
+    ),
   };
   const isMetaPageQuery = {
     objectVariable: "_",
@@ -42,7 +46,7 @@ export async function pageComplete(completeEvent: CompleteEvent) {
 
   if (prefix.startsWith("^")) {
     // A carrot prefix means we're looking for a meta page
-    allPages = await queryLuaObjects<PageMeta>("page", isMetaPageQuery!, {}, 5);
+    allPages = await index.queryLuaObjects<PageMeta>("page", isMetaPageQuery);
     // Let's prefix the names with a caret to make them match
     allPages = allPages.map((page) => ({
       ...page,
@@ -52,18 +56,16 @@ export async function pageComplete(completeEvent: CompleteEvent) {
     // This is the most common case, we're combining three types of completions here:
     allPages = (await Promise.all([
       // All non-meta pages
-      queryLuaObjects<PageMeta>("page", isntMetaPageQuery!, {}, 5),
+      index.queryLuaObjects<PageMeta>("page", isntMetaPageQuery),
       // All documents
-      queryLuaObjects<DocumentMeta>("document", isDocumentQuery!, {}, 5),
+      index.queryLuaObjects<DocumentMeta>("document", isDocumentQuery),
       // And all links to non-existing pages (to augment the existing ones)
-      queryLuaObjects<string>(
+      index.queryLuaObjects<string>(
         "aspiring-page",
         {
           select: { type: "Variable", name: "name", ctx: {} as any },
           distinct: true,
         },
-        {},
-        5,
       ).then((aspiringPages) =>
         // Rewrite them to PageMeta shaped objects
         aspiringPages.map((aspiringPage: string): PageMeta => ({
@@ -94,20 +96,23 @@ export async function pageComplete(completeEvent: CompleteEvent) {
 
       if (isWikilink) {
         // A [[wikilink]]
-        if (pageMeta.displayName) {
-          const decoratedName = namePrefix + pageMeta.displayName;
+        const linkAlias = pageMeta.linkName || pageMeta.displayName;
+        if (linkAlias) {
+          const decoratedName = namePrefix + linkAlias;
           let boost = new Date(pageMeta.lastModified).getTime();
           if (pageMeta._isAspiring) {
             boost = -Infinity;
           }
           completions.push({
-            label: pageMeta.displayName,
+            label: linkAlias,
             displayLabel: decoratedName,
             boost,
             apply: pageMeta.tag === "template"
               ? pageMeta.name
-              : `${pageMeta.name}|${pageMeta.displayName}`,
-            detail: `displayName for: ${pageMeta.name}`,
+              : `${pageMeta.name}|${linkAlias}`,
+            detail: pageMeta.linkName
+              ? `linkName for: ${pageMeta.name}`
+              : `displayName for: ${pageMeta.name}`,
             type: "page",
             cssClass,
           });
@@ -116,7 +121,7 @@ export async function pageComplete(completeEvent: CompleteEvent) {
           for (const alias of pageMeta.aliases) {
             const decoratedName = namePrefix + alias;
             completions.push({
-              label: alias,
+              label: "" + alias,
               displayLabel: decoratedName,
               boost: new Date(pageMeta.lastModified).getTime(),
               apply: pageMeta.tag === "template"
